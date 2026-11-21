@@ -1,4 +1,4 @@
-import { useState, type MouseEvent as SvgMouseEvent } from 'react';
+import { useEffect, useState, type CSSProperties, type MouseEvent as SvgMouseEvent } from 'react';
 import { formatDate, formatINR } from '../format';
 
 export interface ChartPoint {
@@ -32,6 +32,83 @@ function compactINR(n: number): string {
     return `${sign}₹${Math.round(abs / 1000)}k`;
   }
   return formatINR(n);
+}
+
+interface SegmentDef {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  stroke: string;
+  length: number;
+}
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+// Keyed by a data signature in the parent, so a data change remounts this layer
+// and the draw-in replays from the undrawn offset.
+function DrawLayer({
+  segments,
+  comparePath,
+}: {
+  segments: SegmentDef[];
+  comparePath: string | null;
+}) {
+  const [reduced] = useState<boolean>(prefersReducedMotion);
+  // Reduced motion starts already drawn, so no animation runs at all.
+  const [drawn, setDrawn] = useState<boolean>(reduced);
+
+  useEffect(() => {
+    if (drawn) {
+      return undefined;
+    }
+    // Flip to drawn one frame after mount, so the first paint shows the undrawn offset.
+    const frame = requestAnimationFrame(() => setDrawn(true));
+    return () => cancelAnimationFrame(frame);
+  }, [drawn]);
+
+  return (
+    <g>
+      {comparePath !== null && (
+        <polyline
+          points={comparePath}
+          fill="none"
+          stroke={BLUE}
+          strokeWidth={2}
+          strokeDasharray="5 4"
+          style={reduced ? undefined : { opacity: drawn ? 1 : 0, transition: 'opacity 0.5s ease-out' }}
+        />
+      )}
+      {segments.map((s, j) => {
+        const style: CSSProperties | undefined = reduced
+          ? undefined
+          : {
+              strokeDasharray: s.length,
+              strokeDashoffset: drawn ? 0 : s.length,
+              transition: 'stroke-dashoffset 0.5s ease-out',
+              transitionDelay: `${j * 30}ms`,
+            };
+        return (
+          <line
+            key={j}
+            x1={s.x1}
+            y1={s.y1}
+            x2={s.x2}
+            y2={s.y2}
+            stroke={s.stroke}
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            style={style}
+          />
+        );
+      })}
+    </g>
+  );
 }
 
 export default function ForecastChart({
@@ -75,22 +152,32 @@ export default function ForecastChart({
   const ticks = [0, 1, 2, 3, 4].map((k) => lo + ((hi - lo) * k) / 4);
 
   // A segment is teal only when both ends sit at or above the buffer; otherwise crimson.
-  const segments = points.slice(1).map((b, j) => {
+  const segmentDefs: SegmentDef[] = points.slice(1).map((b, j) => {
     const a = points[j];
     const above = a.balance >= buffer && b.balance >= buffer;
-    return (
-      <line
-        key={j}
-        x1={xAt(j, n)}
-        y1={yAt(a.balance)}
-        x2={xAt(j + 1, n)}
-        y2={yAt(b.balance)}
-        stroke={above ? TEAL : RED}
-        strokeWidth={2.5}
-        strokeLinecap="round"
-      />
-    );
+    const x1 = xAt(j, n);
+    const y1 = yAt(a.balance);
+    const x2 = xAt(j + 1, n);
+    const y2 = yAt(b.balance);
+    return {
+      x1,
+      y1,
+      x2,
+      y2,
+      stroke: above ? TEAL : RED,
+      length: Math.hypot(x2 - x1, y2 - y1),
+    };
   });
+
+  const comparePath =
+    compare && compare.length > 0
+      ? compare.map((p, i) => `${xAt(i, compare.length)},${yAt(p.balance)}`).join(' ')
+      : null;
+
+  // Changing any of these remounts DrawLayer, which replays the draw-in.
+  const first = points[0];
+  const last = points[n - 1];
+  const signature = [n, first.date, last.date, first.balance, last.balance, buffer].join('|');
 
   const handleMove = (e: SvgMouseEvent<SVGSVGElement>): void => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -164,18 +251,7 @@ export default function ForecastChart({
               </text>
             </>
           )}
-          {compare && compare.length > 0 && (
-            <polyline
-              points={compare
-                .map((p, i) => `${xAt(i, compare.length)},${yAt(p.balance)}`)
-                .join(' ')}
-              fill="none"
-              stroke={BLUE}
-              strokeWidth={2}
-              strokeDasharray="5 4"
-            />
-          )}
-          {segments}
+          <DrawLayer key={signature} segments={segmentDefs} comparePath={comparePath} />
           {hp && (
             <>
               <line

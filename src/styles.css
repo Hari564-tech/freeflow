@@ -1341,3 +1341,103 @@ table th {
   width: 100%;
   margin-top: 4px;
 }
+/* Mobile dashboard + animations — M3, appended from the IDE terminal (Nexen write gate refused styles.css). */
+.dash-mobile { display: none; }
+.mobile-header { display: none; }
+
+@media (max-width: 640px) {
+  .dash-desktop { display: none; }
+  .dash-mobile { display: flex; flex-direction: column; gap: 14px; }
+  .desktop-header { display: none; }
+  .mobile-header { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 10px; }
+  .app-header { background: transparent; border: none; padding: 0 0 4px; }
+}
+
+.mobile-logo { display: flex; align-items: center; gap: 8px; font-size: 22px; font-weight: 800; color: #0F766E; }
+.mobile-logo img { width: 34px; height: 34px; }
+.mobile-head-right { display: flex; align-items: center; gap: 14px; }
+.mobile-bell { position: relative; color: #1C1917; display: flex; }
+.mobile-bell .bell-dot { position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: #DC2626; border: 2px solid #FAF8F3; }
+.mobile-avatar { width: 40px; height: 40px; border-radius: 50%; background: #0F766E; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+
+.m-biz { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.m-biz-left { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+.m-biz-icon { width: 52px; height: 52px; border-radius: 12px; background: #DCF0E3; color: #0F766E; display: flex; align-items: center; justify-content: center; flex: none; }
+.m-biz-name { font-size: 17px; font-weight: 800; }
+.m-pills { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.m-pill { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.m-pill-demo { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+.m-pill-template { background: #E7E2D8; color: #57534E; border: 1px solid #D6D0C4; }
+.m-date { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+.m-greet-title { font-size: 26px; font-weight: 800; color: #1C1917; }
+.m-greet .muted { margin-top: 2px; display: block; }
+
+.m-kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.m-kpi { border-radius: 12px; padding: 14px; }
+.m-kpi-out { background: #E6F4F1; border: 1px solid #C7E5E0; }
+.m-kpi-over { background: #FEF3C7; border: 1px solid #FDE68A; }
+.m-kpi-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6B6259; }
+.m-kpi-head svg { flex: none; }
+.m-kpi-value { font-size: 24px; font-weight: 800; margin-top: 8px; font-variant-numeric: tabular-nums; }
+
+.m-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.m-card-head h2 { margin: 0; }
+.m-select { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--ink); }
+.m-figures { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.m-figures > div + div { border-left: 1px solid var(--border); padding-left: 12px; }
+.m-fig-value { font-size: 22px; font-weight: 800; color: var(--teal); font-variant-numeric: tabular-nums; }
+
+.m-link { color: var(--teal); font-size: 13px; font-weight: 600; text-decoration: none; }
+.m-list { list-style: none; margin: 0; padding: 0; }
+.m-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); width: 100%; background: none; border-left: none; border-right: none; border-bottom: none; font: inherit; text-align: left; color: inherit; }
+button.m-row { cursor: pointer; }
+.m-list > li:first-child .m-row, .m-list > li.m-row:first-child { border-top: none; }
+.m-avatar { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex: none; }
+.av-mint { background: #DCF0E3; color: #14532D; }
+.av-lav { background: #EDE9FE; color: #5B21B6; }
+.av-peach { background: #FFEDD5; color: #9A3412; }
+.av-sky { background: #DBEAFE; color: #1E40AF; }
+.m-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.m-row-name { font-weight: 700; }
+.m-row .muted { font-size: 13px; }
+.m-row-amount { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.m-upcoming .badge { display: inline-flex; align-items: center; gap: 4px; }
+
+.m-create-btn { width: 100%; padding: 15px; border-radius: 12px; background: var(--teal); color: #fff; font-size: 17px; font-weight: 700; border: none; cursor: pointer; }
+
+.bottom-link { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px 6px; }
+.bottom-link svg { width: 22px; height: 22px; }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideInRight { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes popIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes badgePop { 0% { transform: scale(1); } 40% { transform: scale(1.45); } 100% { transform: scale(1); } }
+.page-enter { animation: fadeUp .25s ease-out backwards; }
+.dash-mobile > * { animation: fadeUp .35s ease-out backwards; }
+.dash-mobile > *:nth-child(2) { animation-delay: .05s; }
+.dash-mobile > *:nth-child(3) { animation-delay: .1s; }
+.dash-mobile > *:nth-child(4) { animation-delay: .15s; }
+.dash-mobile > *:nth-child(5) { animation-delay: .2s; }
+.dash-mobile > *:nth-child(6) { animation-delay: .25s; }
+.dash-mobile > *:nth-child(7) { animation-delay: .3s; }
+.drawer { animation: slideInRight .25s ease-out backwards; }
+.modal, .qr-modal { animation: popIn .2s ease-out backwards; }
+.modal-overlay, .qr-overlay, .drawer-overlay { animation: fadeIn .2s ease-out backwards; }
+.nav-badge, .bell-dot { animation: badgePop .3s ease-out; }
+.btn, .bottom-link, .m-create-btn { transition: transform .12s ease; }
+.btn:active, .bottom-link:active, .m-create-btn:active { transform: scale(.97); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* M3 fix: mobile drawer invoice table must fit without a swipe. */
+@media (max-width: 640px) {
+  .drawer .table th,
+  .drawer .table td {
+    padding: 5px 3px;
+    font-size: 0.78rem;
+  }
+}
