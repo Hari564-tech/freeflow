@@ -21,6 +21,19 @@
   --radius: 10px;
 }
 
+:root {
+  --bg: #FAF8F3;
+  --card: #FFFFFF;
+  --border: #E7E2D8;
+  --text: #1C1917;
+  --teal: #0F766E;
+  --red: #DC2626;
+  --amber: #D97706;
+  --blue: #2563EB;
+  --muted: #6B6259;
+  --radius: 12px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -32,9 +45,10 @@ body {
 }
 
 body {
-  background: var(--cream);
+  background: var(--bg);
   color: var(--ink);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-variant-numeric: normal;
   font-size: 15px;
   line-height: 1.5;
 }
@@ -42,7 +56,8 @@ body {
 h1,
 h2 {
   margin: 0;
-  color: var(--teal-dark);
+  font-weight: 700;
+  color: var(--teal);
 }
 
 h2 {
@@ -62,14 +77,15 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  padding-bottom: 16px;
-  border-bottom: 2px solid var(--line);
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
 }
 
 .app-title h1 {
-  font-size: 1.9rem;
+  font-size: 20px;
   letter-spacing: 0.02em;
 }
 
@@ -131,9 +147,10 @@ h2 {
 .btn {
   font: inherit;
   font-size: 0.9rem;
-  padding: 6px 14px;
-  border-radius: 6px;
-  border: 1px solid transparent;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
   cursor: pointer;
 }
 
@@ -639,4 +656,688 @@ h2 {
 
 .alerts-empty {
   color: var(--muted);
+}
+
+/* QR payment modal */
+
+.qr-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(59, 47, 37, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+}
+
+.qr-modal {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 8px 24px rgba(59, 47, 37, 0.25);
+  text-align: center;
+}
+
+.qr-modal h2 {
+  margin-bottom: 6px;
+}
+
+.qr-modal p {
+  margin: 4px 0 10px;
+}
+
+.qr-svg svg {
+  width: 220px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.qr-link {
+  color: var(--teal);
+  text-decoration: none;
+}
+
+.qr-link:hover {
+  text-decoration: underline;
+}
+
+/* Design system (Level 2) */
+
+.app-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+.app-subtitle {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.template-label,
+.reference-date small {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.badge {
+  font-size: 12px;
+}
+
+.badge.demo {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.btn:hover {
+  background: var(--bg);
+  border-color: var(--teal);
+}
+
+.btn-primary {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--teal-dark);
+  border-color: var(--teal-dark);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  background: var(--bg);
+}
+
+.btn-danger {
+  color: var(--red);
+}
+
+.btn-danger:hover {
+  background: #FEF2F2;
+  border-color: var(--red);
+}
+
+.btn:focus-visible,
+.nav-link:focus-visible,
+.bottom-link:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.amount,
+.money,
+.num,
+td.num,
+.stat-value,
+table td,
+table th {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Navigation */
+
+.top-nav {
+  display: flex;
+  gap: 4px;
+  background: var(--card);
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 800;
+}
+
+.nav-link {
+  position: relative;
+  padding: 12px 14px;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+}
+
+.nav-link.active {
+  color: var(--teal);
+  border-bottom: 3px solid var(--teal);
+}
+
+.nav-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.bottom-nav {
+  display: none;
+}
+
+.bottom-link {
+  position: relative;
+  flex: 1;
+  padding: 10px 4px;
+  text-align: center;
+  color: var(--muted);
+  text-decoration: none;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+}
+
+.bottom-link.active {
+  color: var(--teal);
+  border-bottom-color: var(--teal);
+}
+
+.bottom-link .nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  margin-left: 0;
+}
+
+.more-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 8px;
+  min-width: 160px;
+  margin-bottom: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  box-shadow: 0 8px 24px rgba(28, 25, 23, 0.15);
+}
+
+.app-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Layout surfaces */
+
+.placeholder-tab {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.05);
+}
+
+.placeholder-tab p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.card,
+.new-invoice-form {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.05);
+}
+
+.alert-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.05);
+}
+
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  background: #1C1917;
+  color: #fff;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(28, 25, 23, 0.25);
+  z-index: 1100;
+}
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 25, 23, 0.4);
+  z-index: 1000;
+}
+
+.drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(420px, 100%);
+  background: var(--card);
+  overflow: auto;
+  padding: 20px;
+  box-shadow: -8px 0 24px rgba(28, 25, 23, 0.2);
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(59, 47, 37, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+}
+
+.modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 8px 24px rgba(28, 25, 23, 0.25);
+}
+
+/* Mobile navigation */
+
+@media (max-width: 640px) {
+  .top-nav {
+    display: none;
+  }
+
+  .bottom-nav {
+    display: flex;
+    justify-content: space-around;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    z-index: 900;
+  }
+
+  .app-main {
+    padding-bottom: 72px;
+  }
+
+  .toast {
+    bottom: 84px;
+    left: 12px;
+    right: 12px;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  .qr-overlay {
+    display: none;
+  }
+
+  header,
+  nav,
+  .tabs {
+    display: none;
+  }
+}
+
+/* Invoices page: filters, actions, mobile cards */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.filter-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.filter-bar select,
+.filter-bar input {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+}
+
+.invoice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.btn-sm {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.btn-sm:hover:not(:disabled) {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.btn-sm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.gen-message {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--teal);
+}
+
+.invoice-card-list {
+  display: none;
+}
+
+.invoice-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.invoice-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.invoice-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.invoice-card .invoice-actions {
+  margin-top: 6px;
+}
+
+@media (max-width: 640px) {
+  .invoices-table {
+    display: none;
+  }
+
+  .invoice-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+
+
+.badge-partial {
+  background: #fdeed3;
+  color: var(--amber);
+}
+
+.badge-good {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.badge-warn {
+  background: #fdeed3;
+  color: var(--amber);
+}
+
+.badge-bad {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+/* Forecast chart */
+
+.chart-caption {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--teal-dark);
+}
+
+.chart-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-tooltip {
+  position: absolute;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(28, 25, 23, 0.12);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  min-width: 180px;
+  max-width: 260px;
+  pointer-events: none;
+  z-index: 5;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip ul {
+  margin: 4px 0;
+  padding-left: 16px;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chart-legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+/* Forecast and what-if */
+
+.forecast-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.switch-group {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.switch-btn {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  background: var(--card);
+  color: var(--teal);
+  border: none;
+  cursor: pointer;
+}
+
+.switch-btn.active {
+  background: var(--teal);
+  color: #fff;
+}
+
+.forecast-ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.forecast-ledger th,
+.forecast-ledger td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.in-amt {
+  color: var(--teal);
+}
+
+.out-amt {
+  color: var(--red);
+}
+
+.calc-note {
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 70ch;
+}
+
+.whatif-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.whatif-delta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.delta-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.05);
+}
+
+.verdict-safe {
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.verdict-watch {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.verdict-shortfall {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+
+/* QA pass 21 Nov: form labels need breathing room (inline labels were
+   touching their inputs on Forecast, Alerts and Settings). */
+.inline-form label,
+.alerts-tab .card label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 16px;
+}
+.settings-tab .card form label {
+  display: block;
+  margin-bottom: 12px;
+}
+.settings-tab .card form label input {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  margin-top: 4px;
+}
+/* QA pass 21 Nov: the drawer invoice table overflowed the 420px drawer. */
+.drawer .table th,
+.drawer .table td {
+  padding: 6px 4px;
+  font-size: 0.82rem;
+}
+/* QA pass 21 Nov: .form-field labels (PaymentDrawer, Students form,
+   NewInvoiceModal) were flowing inline and crowding their inputs. */
+.form-field {
+  display: block;
+  margin-bottom: 12px;
+}
+.form-field input,
+.form-field select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
 }

@@ -1,32 +1,49 @@
 import { useState } from 'react';
-import type { ReactNode } from 'react';
-import type { AppData, Invoice, Student } from '../types';
-import { balance, buildForecast, isOverdue } from '../forecast';
-import { diffDays, formatDate, formatINR } from '../format';
+import type { AppData, AppState, Invoice, ReminderTone, Student } from '../types';
+import {
+  balance,
+  buildForecast,
+  compareForecasts,
+  isOverdue,
+  type Scenario,
+} from '../forecast';
+import { addDays, diffDays, formatDate, formatDateTime, formatINR } from '../format';
+import { buildReminderMessage, toneForDaysOverdue, waLink } from '../reminders';
+import { monthLabel } from '../qr';
+import { navigate } from '../router';
 
 type Props = {
   data: AppData;
-  onChange: (next: AppData) => void;
+  state: AppState;
+  onStateChange: (next: AppState) => void;
 };
 
+type Category = 'Overdue' | 'Due Soon' | 'Cash Buffer Risk' | 'Upcoming Large Expenses';
 type Tone = 'danger' | 'warn' | 'ok' | 'info';
 
-const monthFormatter = new Intl.DateTimeFormat('en-GB', {
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
+const CATEGORIES: Category[] = ['Overdue', 'Due Soon', 'Cash Buffer Risk', 'Upcoming Large Expenses'];
+const TONES: ReminderTone[] = ['Polite', 'Friendly', 'Firm'];
 
-// 'YYYY-MM' -> 'Nov 2026'
-function monthLabel(ym: string): string {
-  return monthFormatter.format(new Date(`${ym}-01T00:00:00Z`));
-}
+const BASE: Scenario = {
+  vikramLate: false,
+  decLate: false,
+  delayDays: 0,
+  loseTopStudent: false,
+  unexpectedExpense: 0,
+  overdueUnpaid: false,
+};
 
-function firstName(student: Student | undefined, fallback: string): string {
-  if (!student) {
-    return fallback;
+// The selected tone escalates with days overdue: one step firmer at 8 days,
+// Firm after 21 days.
+function effectiveTone(days: number, base: ReminderTone): ReminderTone {
+  const level = toneForDaysOverdue(days);
+  if (level === 'final') {
+    return 'Firm';
   }
-  return student.name.split(' ')[0];
+  if (level === 'firm') {
+    return base === 'Polite' ? 'Friendly' : 'Firm';
+  }
+  return base;
 }
 
 // Copy text via the async clipboard API, falling back to execCommand.
@@ -69,116 +86,33 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-type AlertCardProps = {
+type AlertItem = {
+  key: string;
+  category: Category;
   tone: Tone;
   title: string;
   detail: string;
   action: string;
-  children?: ReactNode;
+  invoice?: Invoice;
+  student?: Student;
+  chase?: boolean;
 };
 
-function AlertCard({ tone, title, detail, action, children }: AlertCardProps) {
-  return (
-    <section className={`alert-card alert-${tone}`}>
-      <h3>{title}</h3>
-      <p className="alert-detail">{detail}</p>
-      {children}
-      <p className="alert-action">
-        <strong>Next action:</strong> {action}
-      </p>
-    </section>
-  );
-}
-
-type InvoiceAlertProps = {
-  data: AppData;
-  onChange: (next: AppData) => void;
-  invoice: Invoice;
-};
-
-function OverdueCard({ data, onChange, invoice }: InvoiceAlertProps) {
-  const ref = data.referenceDate;
-  const student = data.students.find((s) => s.id === invoice.studentId);
-  const name = student ? student.name : invoice.studentId;
-  const owed = balance(invoice);
-  const daysLate = diffDays(invoice.dueDate, ref);
-  const sentToday = invoice.reminders.includes(ref);
-
-  const message =
-    `Hi ${firstName(student, name)}'s parent, this is a gentle reminder that the ` +
-    `${formatINR(owed)} tuition fee for ${monthLabel(invoice.month)} was due on ` +
-    `${formatDate(invoice.dueDate)}. Could you please pay at your earliest? ` +
-    `Thank you, Priya Sharma`;
-
-  function markReminderSent() {
-    onChange({
-      ...data,
-      invoices: data.invoices.map((inv) =>
-        inv.id === invoice.id && !inv.reminders.includes(ref)
-          ? { ...inv, reminders: [...inv.reminders, ref] }
-          : inv,
-      ),
-    });
+// Next occurrence of a recurring bill on or after the reference date.
+function nextRecurringDate(dayOfMonth: number, referenceDate: string): string {
+  const [y, m] = referenceDate.split('-').map(Number);
+  const day = String(dayOfMonth).padStart(2, '0');
+  const thisMonth = `${y}-${String(m).padStart(2, '0')}-${day}`;
+  if (thisMonth >= referenceDate) {
+    return thisMonth;
   }
-
-  return (
-    <AlertCard
-      tone="danger"
-      title={`${name}: ${formatINR(owed)} overdue ${daysLate} days`}
-      detail={
-        sentToday
-          ? `Reminder sent on ${formatDate(ref)}.`
-          : `Invoice for ${monthLabel(invoice.month)} was due on ${formatDate(invoice.dueDate)}.`
-      }
-      action={
-        sentToday
-          ? 'Reminder sent: payment expected 3 days later'
-          : 'Chase this invoice today'
-      }
-    >
-      <textarea className="reminder-draft" readOnly rows={4} value={message} />
-      <div className="alert-buttons">
-        <CopyButton text={message} />
-        {!sentToday && (
-          <button type="button" onClick={markReminderSent}>
-            Mark reminder sent
-          </button>
-        )}
-      </div>
-    </AlertCard>
-  );
+  const next = m === 12 ? [y + 1, 1] : [y, m + 1];
+  return `${next[0]}-${String(next[1]).padStart(2, '0')}-${day}`;
 }
 
-function DueSoonCard({ data, invoice }: InvoiceAlertProps) {
-  const student = data.students.find((s) => s.id === invoice.studentId);
-  const name = student ? student.name : invoice.studentId;
-  const owed = balance(invoice);
-  const daysAway = diffDays(data.referenceDate, invoice.dueDate);
-
-  const message =
-    `Hi ${firstName(student, name)}'s parent, a friendly reminder that the ` +
-    `${formatINR(owed)} tuition fee for ${monthLabel(invoice.month)} is due on ` +
-    `${formatDate(invoice.dueDate)}. Thank you, Priya Sharma`;
-
-  return (
-    <AlertCard
-      tone="warn"
-      title={`${name}: ${formatINR(owed)} due in ${daysAway} days`}
-      detail={`Invoice for ${monthLabel(invoice.month)} is due on ${formatDate(invoice.dueDate)}.`}
-      action="Send a friendly due-date reminder"
-    >
-      <textarea className="reminder-draft" readOnly rows={4} value={message} />
-      <div className="alert-buttons">
-        <CopyButton text={message} />
-      </div>
-    </AlertCard>
-  );
-}
-
-export default function AlertsTab({ data, onChange }: Props) {
+export default function AlertsTab({ data, state, onStateChange }: Props) {
   const ref = data.referenceDate;
   const unpaid = data.invoices.filter((inv) => balance(inv) > 0);
-
   const overdue = unpaid.filter((inv) => isOverdue(inv, ref));
   const dueSoon = unpaid.filter((inv) => {
     if (isOverdue(inv, ref)) {
@@ -188,56 +122,228 @@ export default function AlertsTab({ data, onChange }: Props) {
     return days >= 0 && days <= 7;
   });
 
-  const forecast = buildForecast(data, 90, { vikramLate: false, decLate: false });
-  const belowBuffer = forecast.minBalance < data.safetyBuffer;
+  const alerts: AlertItem[] = [];
 
-  const studyTable = data.bills.find(
-    (b) =>
-      b.oneTimeDate !== undefined &&
-      b.name.toLowerCase().includes('study table') &&
-      b.oneTimeDate > ref,
-  );
+  for (const inv of overdue) {
+    const student = data.students.find((s) => s.id === inv.studentId);
+    const days = diffDays(inv.dueDate, ref);
+    alerts.push({
+      key: `overdue-${inv.id}`,
+      category: 'Overdue',
+      tone: 'danger',
+      title: `${student?.name ?? inv.studentId}: ${formatINR(balance(inv))} overdue ${days} days`,
+      detail: `Invoice for ${monthLabel(inv.month)} was due on ${formatDate(inv.dueDate)}.`,
+      action: 'Chase this invoice today',
+      invoice: inv,
+      student,
+    });
+  }
+
+  for (const inv of dueSoon) {
+    const student = data.students.find((s) => s.id === inv.studentId);
+    const days = diffDays(ref, inv.dueDate);
+    alerts.push({
+      key: `duesoon-${inv.id}`,
+      category: 'Due Soon',
+      tone: 'warn',
+      title: `${student?.name ?? inv.studentId}: ${formatINR(balance(inv))} due in ${days} days`,
+      detail: `Invoice for ${monthLabel(inv.month)} is due on ${formatDate(inv.dueDate)}.`,
+      action: 'Send a friendly due-date reminder',
+      invoice: inv,
+      student,
+    });
+  }
+
+  // Cash buffer risk: the base forecast and the overdue-unpaid scenario.
+  const base30 = buildForecast(data, 30, BASE);
+  if (base30.minBalance < data.safetyBuffer) {
+    alerts.push({
+      key: 'cash-below-buffer',
+      category: 'Cash Buffer Risk',
+      tone: 'danger',
+      title: `Cash dips below the ${formatINR(data.safetyBuffer)} buffer`,
+      detail: `Lowest projected balance is ${formatINR(base30.minBalance)} on ${formatDate(base30.minBalanceDate)} (next 30 days).`,
+      action: `Ask for the overdue fees or delay non-urgent spending before ${formatDate(base30.minBalanceDate)}`,
+    });
+  }
+  const scen30 = buildForecast(data, 30, { ...BASE, overdueUnpaid: true });
+  const cmp = compareForecasts(base30, scen30);
+  if (cmp.scenLowest < data.safetyBuffer) {
+    const names = overdue
+      .map((inv) => data.students.find((s) => s.id === inv.studentId)?.name.split(' ')[0])
+      .filter((n): n is string => n !== undefined);
+    const who = names.length > 0 ? names.join(' and ') : 'the overdue students';
+    alerts.push({
+      key: 'chase-ananya-vikram',
+      category: 'Cash Buffer Risk',
+      tone: 'danger',
+      title: `Chase ${who} before ${formatDate(cmp.breachDate ?? base30.minBalanceDate)}`,
+      detail: `If their Nov fees are still unpaid on rent day, the balance falls to ${formatINR(cmp.scenLowest)} on ${formatDate(cmp.breachDate ?? base30.minBalanceDate)} — ${formatINR(data.safetyBuffer - cmp.scenLowest)} below the ${formatINR(data.safetyBuffer)} buffer.`,
+      action: 'See the what-if scenario',
+      chase: true,
+    });
+  }
+
+  // Upcoming large expenses: one-time bills within 30 days, and recurring
+  // bills of 5,000 or more whose next occurrence falls within 30 days.
+  const horizonEnd = addDays(ref, 30);
+  for (const bill of data.bills) {
+    if (bill.kind === 'one-time' && bill.oneTimeDate !== undefined) {
+      if (bill.oneTimeDate >= ref && bill.oneTimeDate <= horizonEnd) {
+        alerts.push({
+          key: `expense-${bill.id}`,
+          category: 'Upcoming Large Expenses',
+          tone: 'info',
+          title: `Plan ${formatINR(bill.amount)} for ${bill.name} on ${formatDate(bill.oneTimeDate)}`,
+          detail: `One-time expense on ${formatDate(bill.oneTimeDate)}.`,
+          action: `Set aside ${formatINR(bill.amount)} before ${formatDate(bill.oneTimeDate)}`,
+        });
+      }
+    } else if (bill.kind === 'recurring' && bill.dayOfMonth !== undefined && bill.amount >= 5000) {
+      const next = nextRecurringDate(bill.dayOfMonth, ref);
+      if (next >= ref && next <= horizonEnd) {
+        alerts.push({
+          key: `expense-${bill.id}`,
+          category: 'Upcoming Large Expenses',
+          tone: 'info',
+          title: `Plan ${formatINR(bill.amount)} for ${bill.name} on ${formatDate(next)}`,
+          detail: `Recurring bill due on ${formatDate(next)}.`,
+          action: `Set aside ${formatINR(bill.amount)} before ${formatDate(next)}`,
+        });
+      }
+    }
+  }
+
+  function isHidden(key: string): boolean {
+    if (state.dismissedAlerts.includes(key)) {
+      return true;
+    }
+    const snoozedUntil = state.snoozedAlerts[key];
+    return snoozedUntil !== undefined && snoozedUntil > ref;
+  }
+
+  function snooze(key: string): void {
+    onStateChange({
+      ...state,
+      snoozedAlerts: { ...state.snoozedAlerts, [key]: addDays(ref, 2) },
+    });
+  }
+
+  function dismiss(key: string): void {
+    if (state.dismissedAlerts.includes(key)) {
+      return;
+    }
+    onStateChange({ ...state, dismissedAlerts: [...state.dismissedAlerts, key] });
+  }
+
+  function markReminderSent(invoiceId: string): void {
+    onStateChange({
+      ...state,
+      reminders: { ...state.reminders, [invoiceId]: new Date().toISOString() },
+    });
+  }
+
+  const visible = alerts.filter((a) => !isHidden(a.key));
 
   return (
     <div className="alerts-tab">
       <h2>Alerts</h2>
 
-      {overdue.map((inv) => (
-        <OverdueCard key={`overdue-${inv.id}`} data={data} onChange={onChange} invoice={inv} />
-      ))}
+      <div className="card">
+        <label>
+          Reminder tone
+          <select
+            value={state.tone}
+            onChange={(e) => onStateChange({ ...state, tone: e.target.value as ReminderTone })}
+          >
+            {TONES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="muted">
+          Messages escalate with days overdue: gentle up to 7 days, firmer from 8 days, firm after
+          21 days.
+        </p>
+      </div>
 
-      {dueSoon.map((inv) => (
-        <DueSoonCard key={`due-${inv.id}`} data={data} onChange={onChange} invoice={inv} />
-      ))}
+      {CATEGORIES.map((category) => {
+        const items = visible.filter((a) => a.category === category);
+        if (items.length === 0) {
+          return null;
+        }
+        return (
+          <div key={category}>
+            <h3>{category}</h3>
+            {items.map((item) => {
+              const days =
+                item.invoice !== undefined ? diffDays(item.invoice.dueDate, ref) : 0;
+              const tone =
+                item.invoice !== undefined ? effectiveTone(days, state.tone) : state.tone;
+              const message =
+                item.invoice !== undefined && item.student !== undefined
+                  ? buildReminderMessage(data, item.invoice, item.student, tone, data.business)
+                  : '';
+              const lastReminded =
+                item.invoice !== undefined ? state.reminders[item.invoice.id] : undefined;
+              return (
+                <section key={item.key} className={`alert-card alert-${item.tone}`}>
+                  <h3>{item.title}</h3>
+                  <p className="alert-detail">{item.detail}</p>
+                  {item.invoice !== undefined && (
+                    <>
+                      <p className="muted">
+                        Message tone: {tone}
+                        {tone !== state.tone ? ` (escalated from ${state.tone})` : ''}
+                      </p>
+                      <textarea className="reminder-draft" readOnly rows={5} value={message} />
+                      {lastReminded !== undefined && (
+                        <p className="muted">Last reminded: {formatDateTime(lastReminded)}</p>
+                      )}
+                    </>
+                  )}
+                  <div className="alert-buttons">
+                    {item.invoice !== undefined && item.student !== undefined && message !== '' && (
+                      <a
+                        className="btn"
+                        href={waLink(item.student.parentPhone, message)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Send on WhatsApp
+                      </a>
+                    )}
+                    {message !== '' && <CopyButton text={message} />}
+                    {item.invoice !== undefined && (
+                      <button type="button" onClick={() => markReminderSent(item.invoice!.id)}>
+                        Mark reminder sent
+                      </button>
+                    )}
+                    {item.chase === true && (
+                      <button type="button" onClick={() => navigate('whatif/overdue')}>
+                        See what-if
+                      </button>
+                    )}
+                    <button type="button" onClick={() => snooze(item.key)}>
+                      Snooze 2 days
+                    </button>
+                    <button type="button" onClick={() => dismiss(item.key)}>
+                      Dismiss
+                    </button>
+                  </div>
+                  <p className="alert-action">
+                    <strong>Next action:</strong> {item.action}
+                  </p>
+                </section>
+              );
+            })}
+          </div>
+        );
+      })}
 
-      {belowBuffer ? (
-        <AlertCard
-          tone="danger"
-          title={`Cash dips below the ${formatINR(data.safetyBuffer)} buffer`}
-          detail={`Lowest projected balance is ${formatINR(forecast.minBalance)} on ${formatDate(forecast.minBalanceDate)} (next 90 days).`}
-          action={`Ask for the overdue fees or delay non-urgent spending before ${formatDate(forecast.minBalanceDate)}`}
-        />
-      ) : (
-        <AlertCard
-          tone="ok"
-          title="Cash stays above the buffer"
-          detail={`Lowest projected balance over the next 90 days is ${formatINR(forecast.minBalance)}, against a ${formatINR(data.safetyBuffer)} buffer.`}
-          action="No action needed"
-        />
-      )}
-
-      {studyTable && studyTable.oneTimeDate !== undefined && (
-        <AlertCard
-          tone="info"
-          title={`Plan ${formatINR(studyTable.amount)} for the study table on ${formatDate(studyTable.oneTimeDate)}`}
-          detail={`One-time expense on ${formatDate(studyTable.oneTimeDate)}.`}
-          action={`Set aside ${formatINR(studyTable.amount)} before ${formatDate(studyTable.oneTimeDate)}`}
-        />
-      )}
-
-      {overdue.length === 0 && dueSoon.length === 0 && (
-        <p className="alerts-empty">No overdue or due-soon invoices.</p>
-      )}
+      {visible.length === 0 && <p className="alerts-empty">No alerts right now.</p>}
     </div>
   );
 }

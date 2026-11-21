@@ -1,7 +1,14 @@
 import type { AppData, Invoice, Payment, Student } from './types';
 import { addDays } from './format';
 
-export type Scenario = { vikramLate: boolean; decLate: boolean };
+export type Scenario = {
+  vikramLate: boolean;
+  decLate: boolean;
+  delayDays?: number; // 0 to 20: shifts unpaid future pay dates
+  loseTopStudent?: boolean; // removes generated invoices of the highest-fee student
+  unexpectedExpense?: number; // one extra outflow dated referenceDate
+  overdueUnpaid?: boolean; // overdue unpaid invoices are forecast for 2026-12-10
+};
 
 export type ForecastInvoice = {
   invoice: Invoice;
@@ -109,14 +116,18 @@ export function effectiveInvoices(
       invoice: inv,
       studentId: inv.studentId,
       dueDate,
-      expectedPayDate: expectedPayDate(inv, ref, dueDate),
+      expectedPayDate: scenarioPayDate(inv, ref, dueDate, scenario),
       generated: false,
     };
   });
 
+  const topId = scenario.loseTopStudent ? topStudentId(data.students) : undefined;
   const generated: ForecastInvoice[] = [];
   for (const month of GENERATED_MONTHS) {
     for (const student of data.students) {
+      if (student.id === topId) {
+        continue;
+      }
       const exists = data.invoices.some(
         (i) => i.studentId === student.id && i.month === month,
       );
@@ -140,13 +151,42 @@ export function effectiveInvoices(
         invoice: inv,
         studentId: student.id,
         dueDate,
-        expectedPayDate: expectedPayDate(inv, ref, dueDate),
+        expectedPayDate: scenarioPayDate(inv, ref, dueDate, scenario),
         generated: true,
       });
     }
   }
 
   return [...real, ...generated];
+}
+
+// Pay date after scenario adjustments. Paid invoices and the default scenario are unchanged.
+function scenarioPayDate(
+  inv: Invoice,
+  referenceDate: string,
+  effectiveDueDate: string,
+  scenario: Scenario,
+): string {
+  const base = expectedPayDate(inv, referenceDate, effectiveDueDate);
+  if (balance(inv) <= 0) {
+    return base;
+  }
+  if (effectiveDueDate < referenceDate) {
+    return scenario.overdueUnpaid ? '2026-12-10' : base;
+  }
+  const delay = Math.min(20, Math.max(0, scenario.delayDays ?? 0));
+  return delay > 0 ? addDays(base, delay) : base;
+}
+
+// Student with the highest monthlyFee; the first one wins ties.
+function topStudentId(students: Student[]): string | undefined {
+  let top: Student | undefined;
+  for (const s of students) {
+    if (top === undefined || s.monthlyFee > top.monthlyFee) {
+      top = s;
+    }
+  }
+  return top?.id;
 }
 
 // All 'YYYY-MM' months from the month of startIso through the month of endIso.
@@ -227,6 +267,15 @@ export function buildForecast(
     }
   }
 
+  if (scenario.unexpectedExpense !== undefined && scenario.unexpectedExpense > 0) {
+    events.push({
+      date: ref,
+      label: 'Unexpected expense',
+      kind: 'out',
+      amount: scenario.unexpectedExpense,
+    });
+  }
+
   // Sort by date; on the same date, 'in' events come before 'out' events.
   events.sort((a, b) => {
     if (a.date !== b.date) {
@@ -260,6 +309,10 @@ export function buildForecast(
     }
   }
 
+  // End point at the horizon end, carrying the final balance. Not an event;
+  // it repeats the last balance, so minBalance is unaffected.
+  runningPoints.push({ date: horizonEnd, balance: running });
+
   return {
     events,
     runningPoints,
@@ -273,6 +326,49 @@ export function buildForecast(
     safetyBuffer: data.safetyBuffer,
     referenceDate: ref,
     horizonEnd,
+  };
+}
+
+export function compareForecasts(
+  baseline: Forecast,
+  scenario: Forecast,
+): {
+  baseLowest: number;
+  scenLowest: number;
+  lowestDelta: number;
+  breachDate: string | null;
+  daysBelowBuffer: number;
+  verdict: 'Safe' | 'Watch' | 'Shortfall';
+} {
+  const buffer = scenario.safetyBuffer;
+  const baseLowest = baseline.minBalance;
+  const scenLowest = scenario.minBalance;
+
+  let daysBelowBuffer = 0;
+  let breachDate: string | null = null;
+  for (const p of scenario.runningPoints) {
+    if (p.balance < buffer) {
+      daysBelowBuffer += 1;
+      if (breachDate === null) {
+        breachDate = p.date;
+      }
+    }
+  }
+
+  let verdict: 'Safe' | 'Watch' | 'Shortfall' = 'Safe';
+  if (scenLowest < buffer) {
+    verdict = 'Shortfall';
+  } else if (scenLowest < buffer + 2000) {
+    verdict = 'Watch';
+  }
+
+  return {
+    baseLowest,
+    scenLowest,
+    lowestDelta: scenLowest - baseLowest,
+    breachDate,
+    daysBelowBuffer,
+    verdict,
   };
 }
 
