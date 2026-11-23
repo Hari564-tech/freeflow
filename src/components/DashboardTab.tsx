@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Check, Clock, MessageCircle, QrCode, TrendingUp, UserPlus } from 'lucide-react';
 import type { AppData, BusinessProfile, Invoice, Student, TemplateId } from '../types';
 import { balance, buildForecast, isOverdue, type Forecast } from '../forecast';
 import { addDays, diffDays, formatDate, formatINR } from '../format';
 import { navigate } from '../router';
+import { buildReminderMessage, waLink } from '../reminders';
+import { buildUpiLink, monthLabel, qrSvgForUpi } from '../qr';
 import CollectionChart, { type CollectionPoint } from './CollectionChart';
 import NewInvoiceModal from './NewInvoiceModal';
+import PaymentDrawer from './PaymentDrawer';
+import QrModal from './QrModal';
+import ReceiptModal, { type ReceiptInfo } from './ReceiptModal';
 import StudentDrawer from './StudentDrawer';
+import { Avatar, ProgressBar, StatusPill } from './ui';
 
 type SortKey = 'name' | 'owed' | 'due' | 'status' | 'share';
 type SortDir = 'asc' | 'desc';
@@ -219,26 +226,6 @@ function CalendarIcon() {
   );
 }
 
-function LayersIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3l9 5-9 5-9-5 9-5z" />
-      <path d="M3 13l9 5 9-5" />
-      <path d="M3 17l9 5 9-5" />
-    </svg>
-  );
-}
-
-function WarningIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3l10 18H2z" />
-      <path d="M12 10v5" />
-      <path d="M12 18h.01" />
-    </svg>
-  );
-}
-
 export default function DashboardTab({
   data,
   profile,
@@ -263,6 +250,10 @@ export default function DashboardTab({
   const [introVisible, setIntroVisible] = useState<boolean>(true);
   const [horizon, setHorizon] = useState<Horizon>(30);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
+  const [paying, setPaying] = useState<Invoice | null>(null);
+  const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
+  const [qr, setQr] = useState<{ link: string; svg: string; amount: number; studentName: string; month: string } | null>(null);
+  const [qrError, setQrError] = useState<boolean>(false);
 
   const activeStudents = data.students.filter((s) => s.active);
   const activeIds = new Set(activeStudents.map((s) => s.id));
@@ -395,8 +386,62 @@ export default function DashboardTab({
 
   const ownerFirst = data.business.ownerName.trim().split(/\s+/)[0] ?? '';
 
+  // Earliest unpaid invoice per student, for the inline actions.
+  function invoiceFor(studentId: string): Invoice | undefined {
+    return unpaid.filter((inv) => inv.studentId === studentId).sort(byDueThenBalance)[0];
+  }
+
+  async function openQrFor(inv: Invoice, student: Student): Promise<void> {
+    setQrError(false);
+    try {
+      const link = buildUpiLink(profile, student.name, inv);
+      const svg = await qrSvgForUpi(link);
+      setQr({ link, svg, amount: balance(inv), studentName: student.name, month: monthLabel(inv.month) });
+    } catch {
+      setQrError(true);
+    }
+  }
+
+  function remindHref(inv: Invoice, student: Student): string | null {
+    if (!student.parentPhone) {
+      return null;
+    }
+    const message = buildReminderMessage(data, inv, student, 'Polite', profile);
+    return waLink(student.parentPhone, message);
+  }
+
+  // Needs attention: most overdue first, then the largest balance.
+  const needsAttention = [...rows].sort((a, b) => b.days - a.days || b.owed - a.owed).slice(0, 5);
+  const collectedPct =
+    collectedThisMonth + totalOutstanding > 0
+      ? Math.round((collectedThisMonth / (collectedThisMonth + totalOutstanding)) * 100)
+      : 0;
+
   return (
     <section className="tab-content">
+      <div className="hero-card">
+        <div className="hero-label">Total pending this month</div>
+        <div className="hero-value">{formatINR(totalOutstanding)}</div>
+        <p className="hero-sub">
+          Collected {formatINR(collectedThisMonth)} so far · {formatINR(totalOverdue)} overdue
+        </p>
+        <ProgressBar value={collectedPct} ariaLabel={`Collected ${collectedPct} percent of this month's fees`} />
+        <div className="hero-actions">
+          {overdue.length > 0 ? (
+            <a className="hero-btn" href="#/alerts">
+              <MessageCircle size={18} aria-hidden="true" /> Send reminders to all overdue
+            </a>
+          ) : (
+            <span className="hero-btn">
+              <Check size={18} aria-hidden="true" /> Nothing overdue — nice work
+            </span>
+          )}
+          <a className="hero-btn hero-btn-ghost" href="#/forecast">
+            <TrendingUp size={18} aria-hidden="true" /> View 30-day forecast
+          </a>
+        </div>
+      </div>
+
       <div className="dash-desktop">
         {introVisible && (
           <div className="card intro-card">
@@ -427,6 +472,13 @@ export default function DashboardTab({
           <div className="card kpi-card stat-info">
             <div className="stat-label">Due in next 30 days</div>
             <div className="stat-value">{formatINR(totalDue30)}</div>
+          </div>
+          <div className="card kpi-card stat-info">
+            <div className="stat-label">Expected in next 30 days</div>
+            <div className="stat-value">{formatINR(forecast.totalIn)}</div>
+            <div className="muted">
+              <a href="#/forecast">View 30-day forecast</a>
+            </div>
           </div>
           <div className="card kpi-card">
             <div className="stat-label">Cash position</div>
@@ -523,6 +575,72 @@ export default function DashboardTab({
           )}
         </div>
 
+        <div className="card">
+          <div className="m-card-head">
+            <h2>Needs attention</h2>
+            <a className="m-link" href="#/invoices">
+              View all
+            </a>
+          </div>
+          {needsAttention.length === 0 ? (
+            <div className="empty-state">
+              <Check size={40} aria-hidden="true" />
+              <h3>All caught up</h3>
+              <p>Every invoice is paid. Add your first student to start tracking fees.</p>
+              <button type="button" className="btn btn-primary" onClick={() => navigate('students')}>
+                <UserPlus size={18} aria-hidden="true" /> Add your first student
+              </button>
+            </div>
+          ) : (
+            <ul className="needs-list stagger">
+              {needsAttention.map((r, i) => {
+                const inv = invoiceFor(r.student.id);
+                const href = inv ? remindHref(inv, r.student) : null;
+                const ring = r.days > 0 ? 'overdue' : 'due';
+                return (
+                  <li key={r.student.id}>
+                    <div className="need-row">
+                      <Avatar name={r.student.name} index={i} ring={ring} />
+                      <div className="need-main">
+                        <div className="need-name">{r.student.name}</div>
+                        <div className="need-sub">
+                          {r.student.className} · {statusText(r.days)}
+                        </div>
+                        <div className="need-actions">
+                          {href !== null ? (
+                            <a className="btn btn-sm" href={href} target="_blank" rel="noopener noreferrer">
+                              <MessageCircle aria-hidden="true" /> WhatsApp
+                            </a>
+                          ) : (
+                            <span className="btn btn-sm" aria-disabled="true" style={{ opacity: 0.5 }}>
+                              No phone
+                            </span>
+                          )}
+                          {inv && (
+                            <>
+                              <button type="button" className="btn btn-sm btn-primary" onClick={() => setPaying(inv)}>
+                                Mark paid
+                              </button>
+                              <button type="button" className="btn btn-sm" onClick={() => void openQrFor(inv, r.student)}>
+                                <QrCode aria-hidden="true" /> Show QR
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="need-col">
+                        <span className="need-amount">{formatINR(r.owed)}</span>
+                        <StatusPill status={r.days > 0 ? 'overdue' : 'due'} />
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {qrError && <p className="muted">Could not generate the QR code. Try again.</p>}
+        </div>
+
         <div className="card pricing-card">
           <h2>FeeFlow Pro</h2>
           <p>
@@ -564,20 +682,27 @@ export default function DashboardTab({
           <div className="muted">{"Here's your fee overview."}</div>
         </div>
 
-        <div className="m-kpi-grid">
-          <div className="m-kpi m-kpi-out">
-            <div className="m-kpi-head">
-              <LayersIcon />
-              <span>Total outstanding</span>
+        <div className="kpi-chips">
+          <div className="kpi-chip kpi-chip-success">
+            <div className="kpi-chip-label">
+              <Check aria-hidden="true" /> Collected
             </div>
-            <div className="m-kpi-value">{formatINR(outShown)}</div>
+            <div className="kpi-chip-value">{formatINR(collectedThisMonth)}</div>
+            <div className="kpi-chip-sub">this month</div>
           </div>
-          <div className="m-kpi m-kpi-over">
-            <div className="m-kpi-head">
-              <WarningIcon />
-              <span>Total overdue</span>
+          <div className="kpi-chip">
+            <div className="kpi-chip-label">
+              <Clock aria-hidden="true" /> Pending
             </div>
-            <div className="m-kpi-value">{formatINR(overShown)}</div>
+            <div className="kpi-chip-value">{formatINR(outShown)}</div>
+            <div className="kpi-chip-sub">{unpaid.length} unpaid {unpaid.length === 1 ? 'invoice' : 'invoices'}</div>
+          </div>
+          <div className="kpi-chip kpi-chip-danger">
+            <div className="kpi-chip-label">
+              <AlertTriangle aria-hidden="true" /> Overdue
+            </div>
+            <div className="kpi-chip-value">{formatINR(overShown)}</div>
+            <div className="kpi-chip-sub">{overdue.length} overdue</div>
           </div>
         </div>
 
@@ -676,6 +801,72 @@ export default function DashboardTab({
           )}
         </div>
 
+        <div className="card">
+          <div className="m-card-head">
+            <h2>Needs attention</h2>
+            <a className="m-link" href="#/invoices">
+              View all
+            </a>
+          </div>
+          {needsAttention.length === 0 ? (
+            <div className="empty-state">
+              <Check size={40} aria-hidden="true" />
+              <h3>All caught up</h3>
+              <p>Every invoice is paid. Add your first student to start tracking fees.</p>
+              <button type="button" className="btn btn-primary" onClick={() => navigate('students')}>
+                <UserPlus size={18} aria-hidden="true" /> Add your first student
+              </button>
+            </div>
+          ) : (
+            <ul className="needs-list stagger">
+              {needsAttention.map((r, i) => {
+                const inv = invoiceFor(r.student.id);
+                const href = inv ? remindHref(inv, r.student) : null;
+                const ring = r.days > 0 ? 'overdue' : 'due';
+                return (
+                  <li key={r.student.id}>
+                    <div className="need-row">
+                      <Avatar name={r.student.name} index={i} ring={ring} />
+                      <div className="need-main">
+                        <div className="need-name">{r.student.name}</div>
+                        <div className="need-sub">
+                          {r.student.className} · {statusText(r.days)}
+                        </div>
+                        <div className="need-actions">
+                          {href !== null ? (
+                            <a className="btn btn-sm" href={href} target="_blank" rel="noopener noreferrer">
+                              <MessageCircle aria-hidden="true" /> WhatsApp
+                            </a>
+                          ) : (
+                            <span className="btn btn-sm" aria-disabled="true" style={{ opacity: 0.5 }}>
+                              No phone
+                            </span>
+                          )}
+                          {inv && (
+                            <>
+                              <button type="button" className="btn btn-sm btn-primary" onClick={() => setPaying(inv)}>
+                                Mark paid
+                              </button>
+                              <button type="button" className="btn btn-sm" onClick={() => void openQrFor(inv, r.student)}>
+                                <QrCode aria-hidden="true" /> Show QR
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="need-col">
+                        <span className="need-amount">{formatINR(r.owed)}</span>
+                        <StatusPill status={r.days > 0 ? 'overdue' : 'due'} />
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {qrError && <p className="muted">Could not generate the QR code. Try again.</p>}
+        </div>
+
         <button type="button" className="m-create-btn" onClick={() => setModalOpen(true)}>
           + Create invoice
         </button>
@@ -700,6 +891,36 @@ export default function DashboardTab({
           dueDays={dueDays}
         />
       )}
+
+      {paying !== null && (
+        <PaymentDrawer
+          data={data}
+          invoice={paying}
+          onChange={onChange}
+          onClose={() => setPaying(null)}
+          onPaid={(invoice, payment) => {
+            const student = data.students.find((s) => s.id === invoice.studentId);
+            setReceipt({
+              invoice,
+              payment,
+              studentName: student?.name ?? invoice.studentId,
+              studentPhone: student?.parentPhone,
+            });
+          }}
+        />
+      )}
+
+      <ReceiptModal receipt={receipt} profile={profile} onClose={() => setReceipt(null)} />
+
+      <QrModal
+        open={qr !== null}
+        onClose={() => setQr(null)}
+        upiLink={qr?.link ?? ''}
+        qrSvg={qr?.svg ?? ''}
+        amount={qr?.amount ?? 0}
+        studentName={qr?.studentName ?? ''}
+        monthLabel={qr?.month ?? ''}
+      />
     </section>
   );
 }

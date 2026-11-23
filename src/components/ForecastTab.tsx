@@ -3,6 +3,7 @@ import type { AppData } from '../types';
 import { buildForecast, type Forecast, type Scenario } from '../forecast';
 import { formatDate, formatINR } from '../format';
 import ForecastChart, { type ChartPoint } from './ForecastChart';
+import { SegmentedControl } from './ui';
 
 type Horizon = 30 | 60 | 90;
 type Filter = 'all' | 'in' | 'out';
@@ -88,19 +89,12 @@ export default function ForecastTab({
   return (
     <section className="tab-content">
       <div className="card">
-        <div className="switch-group" role="group" aria-label="Forecast horizon">
-          {HORIZONS.map((h) => (
-            <button
-              key={h}
-              type="button"
-              className={h === horizon ? 'switch-btn active' : 'switch-btn'}
-              aria-pressed={h === horizon}
-              onClick={() => setHorizon(h)}
-            >
-              {h} days
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          options={HORIZONS.map((h) => ({ value: String(h), label: `${h} days` }))}
+          value={String(horizon)}
+          onChange={(v) => setHorizon(Number(v) as Horizon)}
+          label="Forecast horizon"
+        />
       </div>
 
       <div className="card">
@@ -170,19 +164,12 @@ export default function ForecastTab({
 
       <div className="card">
         <h2>Ledger</h2>
-        <div className="switch-group" role="group" aria-label="Ledger filter">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              className={f.key === filter ? 'switch-btn active' : 'switch-btn'}
-              aria-pressed={f.key === filter}
-              onClick={() => setFilter(f.key)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          options={FILTERS.map((f) => ({ value: f.key, label: f.label }))}
+          value={filter}
+          onChange={setFilter}
+          label="Ledger filter"
+        />
         {rows.length === 0 ? (
           <p className="muted">No events in this window.</p>
         ) : (

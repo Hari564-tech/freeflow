@@ -1,20 +1,22 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { AppData, Invoice, PaymentMethod } from '../types';
+import type { AppData, Invoice, Payment, PaymentMethod } from '../types';
 import { balance } from '../forecast';
 import { formatINR } from '../format';
 import { validateInvoiceAmounts } from '../data';
 import { useFocusTrap } from '../useFocusTrap';
+import { AmountInput, SegmentedControl } from './ui';
 
 type Props = {
   data: AppData;
   invoice: Invoice;
   onChange: (next: AppData) => void;
   onClose: () => void;
+  onPaid?: (invoice: Invoice, payment: Payment) => void;
 };
 
 const METHODS: PaymentMethod[] = ['UPI', 'Cash', 'Bank'];
 
-export default function PaymentDrawer({ data, invoice, onChange, onClose }: Props) {
+export default function PaymentDrawer({ data, invoice, onChange, onClose, onPaid }: Props) {
   const owed = balance(invoice);
   const [amount, setAmount] = useState<string>(String(owed));
   const [method, setMethod] = useState<PaymentMethod>('UPI');
@@ -82,6 +84,12 @@ export default function PaymentDrawer({ data, invoice, onChange, onClose }: Prop
       ...data,
       invoices: data.invoices.map((inv) => (inv.id === invoice.id ? next : inv)),
     });
+    // Confetti burst, only the first payment of the session (App listens).
+    if (window.sessionStorage.getItem('feeflow_confetti_done') === null) {
+      window.sessionStorage.setItem('feeflow_confetti_done', '1');
+      window.dispatchEvent(new Event('feeflow-paid'));
+    }
+    onPaid?.(next, payment);
     onClose();
   }
 
@@ -99,25 +107,21 @@ export default function PaymentDrawer({ data, invoice, onChange, onClose }: Prop
           Balance due {formatINR(owed)} · {invoice.month}
         </p>
         <form onSubmit={handleSubmit} noValidate>
-          <label className="form-field">
-            <span>Amount</span>
-            <input
-              type="number"
-              min="1"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </label>
-          <label className="form-field">
+          <AmountInput
+            label="Amount"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+            error={error}
+          />
+          <div className="ui-field">
             <span>Method</span>
-            <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
-              {METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
+            <SegmentedControl
+              options={METHODS.map((m) => ({ value: m, label: m }))}
+              value={method}
+              onChange={(m) => setMethod(m)}
+              label="Payment method"
+            />
+          </div>
           <label className="form-field">
             <span>Date</span>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -142,9 +146,8 @@ export default function PaymentDrawer({ data, invoice, onChange, onClose }: Prop
               onChange={(e) => setNote(e.target.value)}
             />
           </label>
-          {error && <p className="form-error">{error}</p>}
           <div className="form-actions">
-            <button type="submit" className="btn">
+            <button type="submit" className="btn btn-primary">
               Save payment
             </button>
             <button type="button" className="btn btn-ghost" onClick={onClose}>

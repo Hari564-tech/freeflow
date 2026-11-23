@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { formatINR } from '../format';
 import { useFocusTrap } from '../useFocusTrap';
+import { QRCard } from './ui';
 
 type QrModalProps = {
   open: boolean;
@@ -52,6 +53,14 @@ export default function QrModal({
     return null;
   }
 
+  // UPI id is embedded in the deep link (upi://pay?pa=...).
+  let upiId = '';
+  try {
+    upiId = new URLSearchParams(upiLink.split('?')[1] ?? '').get('pa') ?? '';
+  } catch {
+    upiId = '';
+  }
+
   return (
     <div className="qr-overlay" ref={overlayRef} onClick={onClose}>
       <div
@@ -66,13 +75,15 @@ export default function QrModal({
         <p className="muted">
           {monthLabel} · {formatINR(amount)}
         </p>
-        <div className="qr-svg" dangerouslySetInnerHTML={{ __html: qrSvg }} />
-        <p>
-          <a className="qr-link" href={upiLink}>
-            Open in UPI app
-          </a>
-        </p>
-        <button type="button" className="btn btn-secondary" onClick={onClose}>
+        <QRCard
+          qrSvg={qrSvg}
+          upiId={upiId}
+          upiLink={upiLink}
+          amount={amount}
+          studentName={studentName}
+          month={monthLabel}
+        />
+        <button type="button" className="btn btn-secondary" onClick={onClose} style={{ marginTop: 12 }}>
           Close
         </button>
       </div>

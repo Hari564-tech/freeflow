@@ -2,12 +2,16 @@ import { useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import type { AppData, AppState, BusinessProfile, ReminderTone, TemplateId } from '../types';
 
+export type ThemeChoice = 'light' | 'dark' | 'system';
+
 type Props = {
   data: AppData;
   onChange: (next: AppData) => void;
   state: AppState;
   onStateChange: (next: AppState) => void;
   onReset: () => void;
+  theme?: ThemeChoice;
+  onThemeChange?: (theme: ThemeChoice) => void;
 };
 
 type Message = { kind: 'ok' | 'error'; text: string } | null;
@@ -102,6 +106,59 @@ type ProfileCardProps = {
   onStateChange: (next: AppState) => void;
 };
 
+function ThemeCard({ theme, onThemeChange }: { theme: ThemeChoice; onThemeChange: (t: ThemeChoice) => void }) {
+  const options: { value: ThemeChoice; label: string }[] = [
+    { value: 'light', label: 'Light' },
+    { value: 'dark', label: 'Dark' },
+    { value: 'system', label: 'System' },
+  ];
+  return (
+    <div className="card">
+      <h3>Appearance</h3>
+      <div className="seg theme-seg" role="group" aria-label="Theme">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={o.value === theme}
+            onClick={() => onThemeChange(o.value)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="muted">
+        System follows your device&apos;s light/dark setting. Dark mode works on every screen.
+      </p>
+    </div>
+  );
+}
+
+function LanguageCard() {
+  const [lang, setLang] = useState<string>(
+    () => window.localStorage.getItem('feeflow_lang') ?? 'en',
+  );
+  function change(value: string): void {
+    setLang(value);
+    window.localStorage.setItem('feeflow_lang', value);
+  }
+  return (
+    <div className="card">
+      <h3>Language</h3>
+      <label>
+        App language
+        <select value={lang} onChange={(e) => change(e.target.value)}>
+          <option value="en">English</option>
+          <option value="te">Telugu (coming soon)</option>
+        </select>
+      </label>
+      <p className="muted">
+        Telugu translations are not ready yet — the app stays in English until they ship.
+      </p>
+    </div>
+  );
+}
+
 function ProfileCard({ state, onStateChange }: ProfileCardProps) {
   const saved = state.templates[state.activeTemplateId].business;
   const [form, setForm] = useState<BusinessProfile>(saved);
@@ -167,6 +224,35 @@ function ProfileCard({ state, onStateChange }: ProfileCardProps) {
         <label>
           Phone (optional)
           <input value={form.phone} onChange={(e) => update('phone', e.target.value)} />
+        </label>
+        <label>
+          Business logo (optional)
+          {window.localStorage.getItem('feeflow_logo') !== null && (
+            <img
+              className="logo-preview"
+              src={window.localStorage.getItem('feeflow_logo') ?? ''}
+              alt="Business logo preview"
+            />
+          )}
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) {
+                return;
+              }
+              const reader = new FileReader();
+              reader.onload = () => {
+                if (typeof reader.result === 'string') {
+                  window.localStorage.setItem('feeflow_logo', reader.result);
+                  window.dispatchEvent(new Event('feeflow-logo'));
+                }
+              };
+              reader.readAsDataURL(file);
+            }}
+          />
         </label>
         <button type="submit" className="btn btn-primary">Save profile</button>
         {message && <p className={message.kind === 'ok' ? 'form-ok' : 'form-error'}>{message.text}</p>}
@@ -287,7 +373,7 @@ function DataCard({ state, onStateChange, onImported, onReset }: DataCardProps) 
 }
 
 export default function SettingsTab(props: Props) {
-  const { state, onStateChange, onReset } = props;
+  const { state, onStateChange, onReset, theme, onThemeChange } = props;
   // Bumped on import/reset so the forms re-read their values from state.
   const [epoch, setEpoch] = useState(0);
 
@@ -307,6 +393,12 @@ export default function SettingsTab(props: Props) {
       <h2>Settings</h2>
 
       <ProfileCard key={`${state.activeTemplateId}-${epoch}`} state={state} onStateChange={onStateChange} />
+
+      {theme !== undefined && onThemeChange !== undefined && (
+        <ThemeCard theme={theme} onThemeChange={onThemeChange} />
+      )}
+
+      <LanguageCard />
 
       <div className="card">
         <h3>Template</h3>

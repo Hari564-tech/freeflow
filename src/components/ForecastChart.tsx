@@ -14,12 +14,12 @@ const H = 260;
 const PAD = { left: 64, right: 16, top: 16, bottom: 28 };
 const INNER_W = W - PAD.left - PAD.right;
 const INNER_H = H - PAD.top - PAD.bottom;
-const TEAL = '#0F766E';
+const TEAL = '#4F46E5';
 const RED = '#DC2626';
 const AMBER = '#D97706';
-const BLUE = '#2563EB';
-const GRID = '#E7E2D8';
-const MUTED = '#6B6259';
+const BLUE = '#8B5CF6';
+const GRID = '#CBD5E1';
+const MUTED = '#64748B';
 
 // Short rupee label for axis ticks, e.g. 1,50,000 -> ₹1.5L, 4,000 -> ₹4k.
 function compactINR(n: number): string {

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { FileText } from 'lucide-react';
 import type { AppData, BusinessProfile, Invoice, Student } from '../types';
 import { amountPaid, balance, isOverdue } from '../forecast';
 import { formatDate, formatINR } from '../format';
@@ -10,6 +11,8 @@ import { navigate } from '../router';
 import PaymentDrawer from './PaymentDrawer';
 import NewInvoiceModal from './NewInvoiceModal';
 import QrModal from './QrModal';
+import ReceiptModal, { type ReceiptInfo } from './ReceiptModal';
+import { EmptyState, StatusPill, type PillStatus } from './ui';
 
 type Props = {
   data: AppData;
@@ -20,6 +23,14 @@ type Props = {
 
 type DisplayStatus = 'paid' | 'overdue' | 'partial' | 'draft' | 'sent';
 type StatusFilter = 'unpaid' | 'all' | 'overdue' | 'sent' | 'partial' | 'paid';
+
+const PILL_STATUS: Record<DisplayStatus, PillStatus> = {
+  paid: 'paid',
+  overdue: 'overdue',
+  partial: 'partial',
+  draft: 'unpaid',
+  sent: 'sent',
+};
 
 const STATUS_LABEL: Record<DisplayStatus, string> = {
   paid: 'Paid',
@@ -96,6 +107,16 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
   const [payingId, setPayingId] = useState<string | null>(null);
   const [qr, setQr] = useState<{ invoice: Invoice; link: string; svg: string } | null>(null);
   const [qrError, setQrError] = useState<boolean>(false);
+  const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
+
+  // Opened from the App + FAB ("New invoice").
+  useEffect(() => {
+    if (window.localStorage.getItem('feeflow_open_new_invoice') === '1') {
+      window.localStorage.removeItem('feeflow_open_new_invoice');
+      setShowNew(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const studentOf = (inv: Invoice): Student | undefined =>
     data.students.find((s) => s.id === inv.studentId);
@@ -267,7 +288,7 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
                   <td className="amount">{formatINR(owed)}</td>
                   <td>{formatDate(inv.dueDate)}</td>
                   <td>
-                    <span className={`badge badge-${status}`}>{STATUS_LABEL[status]}</span>
+                    <StatusPill status={PILL_STATUS[status]} label={STATUS_LABEL[status]} />
                   </td>
                   <td>{renderActions(inv)}</td>
                 </tr>
@@ -286,7 +307,7 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
             <div key={inv.id} className="invoice-card">
               <div className="invoice-card-head">
                 <strong>{nameOf(inv)}</strong>
-                <span className={`badge badge-${status}`}>{STATUS_LABEL[status]}</span>
+                <StatusPill status={PILL_STATUS[status]} label={STATUS_LABEL[status]} />
               </div>
               <p className="muted">
                 {monthLabel(inv.month)} · Due {formatDate(inv.dueDate)}
@@ -301,7 +322,18 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
         })}
       </div>
 
-      {rows.length === 0 && <p className="muted">No invoices match these filters.</p>}
+      {rows.length === 0 && (
+        <EmptyState
+          icon={<FileText aria-hidden="true" />}
+          title="No invoices match these filters"
+          body="Try a different status or month, or create a new invoice."
+          action={
+            <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
+              New invoice
+            </button>
+          }
+        />
+      )}
 
       {paying !== undefined && (
         <PaymentDrawer
@@ -309,15 +341,29 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
           invoice={paying}
           onChange={onChange}
           onClose={() => setPayingId(null)}
+          onPaid={(invoice, payment) =>
+            setReceipt({
+              invoice,
+              payment,
+              studentName: nameOf(invoice),
+              studentPhone: studentOf(invoice)?.parentPhone,
+            })
+          }
         />
       )}
+
+      <ReceiptModal
+        receipt={receipt}
+        profile={profile}
+        onClose={() => setReceipt(null)}
+      />
 
       {showNew && (
         <NewInvoiceModal
           data={data}
           onChange={onChange}
           onClose={() => setShowNew(false)}
-          onAddStudent={() => navigate('students')}
+          onAddStudent={() => navigate('#/students')}
           dueDays={dueDays}
         />
       )}

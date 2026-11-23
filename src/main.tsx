@@ -46,7 +46,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
               padding: '10px 20px',
               borderRadius: 10,
               border: 'none',
-              background: '#0F766E',
+              background: '#4F46E5',
               color: '#FFFFFF',
               fontWeight: 600,
               cursor: 'pointer',

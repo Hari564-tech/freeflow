@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { AppData, AppState, Invoice, ReminderTone, Student } from '../types';
+import { Chip, SegmentedControl, WhatsAppBubble } from './ui';
 import {
   balance,
   buildForecast,
@@ -21,7 +22,8 @@ type Props = {
 type Category = 'Overdue' | 'Due Soon' | 'Cash Buffer Risk' | 'Upcoming Large Expenses';
 type Tone = 'danger' | 'warn' | 'ok' | 'info';
 
-const CATEGORIES: Category[] = ['Overdue', 'Due Soon', 'Cash Buffer Risk', 'Upcoming Large Expenses'];
+const TODAY_CATEGORIES: Category[] = ['Overdue', 'Cash Buffer Risk'];
+const WEEK_CATEGORIES: Category[] = ['Due Soon', 'Upcoming Large Expenses'];
 const TONES: ReminderTone[] = ['Polite', 'Friendly', 'Firm'];
 
 const BASE: Scenario = {
@@ -250,33 +252,33 @@ export default function AlertsTab({ data, state, onStateChange }: Props) {
       <h2>Alerts</h2>
 
       <div className="card">
-        <label>
-          Reminder tone
-          <select
-            value={state.tone}
-            onChange={(e) => onStateChange({ ...state, tone: e.target.value as ReminderTone })}
-          >
-            {TONES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
+        <p className="muted" style={{ margin: '0 0 8px' }}>Reminder tone</p>
+        <SegmentedControl
+          options={TONES.map((t) => ({ value: t, label: t }))}
+          value={state.tone}
+          onChange={(t) => onStateChange({ ...state, tone: t })}
+          label="Reminder tone"
+        />
         <p className="muted">
           Messages escalate with days overdue: gentle up to 7 days, firmer from 8 days, firm after
           21 days.
         </p>
       </div>
 
-      {CATEGORIES.map((category) => {
-        const items = visible.filter((a) => a.category === category);
+      {[
+        { title: 'Today', categories: TODAY_CATEGORIES },
+        { title: 'This week', categories: WEEK_CATEGORIES },
+      ].map((group) => {
+        const items = visible.filter((a) => group.categories.includes(a.category));
         if (items.length === 0) {
           return null;
         }
         return (
-          <div key={category}>
-            <h3>{category}</h3>
+          <div key={group.title}>
+            <div className="alert-group-head">
+              <h3>{group.title}</h3>
+              <span className="count">{items.length} to handle</span>
+            </div>
             {items.map((item) => {
               const days =
                 item.invoice !== undefined ? diffDays(item.invoice.dueDate, ref) : 0;
@@ -290,6 +292,9 @@ export default function AlertsTab({ data, state, onStateChange }: Props) {
                 item.invoice !== undefined ? state.reminders[item.invoice.id] : undefined;
               return (
                 <section key={item.key} className={`alert-card alert-${item.tone}`}>
+                  <Chip tone={item.tone === 'danger' ? 'danger' : item.tone === 'warn' ? 'warning' : item.tone === 'ok' ? 'success' : 'info'}>
+                    {item.category}
+                  </Chip>
                   <h3>{item.title}</h3>
                   <p className="alert-detail">{item.detail}</p>
                   {item.invoice !== undefined && (
@@ -298,7 +303,7 @@ export default function AlertsTab({ data, state, onStateChange }: Props) {
                         Message tone: {tone}
                         {tone !== state.tone ? ` (escalated from ${state.tone})` : ''}
                       </p>
-                      <textarea className="reminder-draft" readOnly rows={5} value={message} />
+                      <WhatsAppBubble message={message} tone={tone} />
                       {lastReminded !== undefined && (
                         <p className="muted">Last reminded: {formatDateTime(lastReminded)}</p>
                       )}
@@ -307,7 +312,7 @@ export default function AlertsTab({ data, state, onStateChange }: Props) {
                   <div className="alert-buttons">
                     {item.invoice !== undefined && item.student !== undefined && item.student.parentPhone && message !== '' && (
                       <a
-                        className="btn"
+                        className="btn btn-primary"
                         href={waLink(item.student.parentPhone, message)}
                         target="_blank"
                         rel="noreferrer"
