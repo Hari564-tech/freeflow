@@ -82,6 +82,7 @@ export function printInvoice(
 
   const w = window.open('', '_blank');
   if (w === null) {
+    alert('The print window was blocked. Please allow pop-ups for this site and try again.');
     return;
   }
   w.document.write(html);

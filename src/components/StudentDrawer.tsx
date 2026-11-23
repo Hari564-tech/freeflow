@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AppData, BusinessProfile, Invoice, ReminderTone, Student } from '../types';
 import { amountPaid, balance, isOverdue } from '../forecast';
 import { diffDays, formatDate, formatINR } from '../format';
@@ -6,6 +6,7 @@ import { buildReminderMessage, toneForDaysOverdue, waLink } from '../reminders';
 import { buildUpiLink, monthLabel, qrSvgForUpi } from '../qr';
 import { reliabilityOf } from '../reliability';
 import QrModal from './QrModal';
+import { useFocusTrap } from '../useFocusTrap';
 
 type StudentDrawerProps = {
   student: Student;
@@ -40,6 +41,9 @@ export default function StudentDrawer({
 }: StudentDrawerProps) {
   const [qr, setQr] = useState<QrState | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const [qrError, setQrError] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(overlayRef);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -51,6 +55,15 @@ export default function StudentDrawer({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, qrOpen]);
+
+  // Lock page scroll while the drawer is open; restore the previous value on close.
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
 
   const reliability = reliabilityOf(student.id, invoices, referenceDate);
   const target: Invoice | undefined = invoices
@@ -76,15 +89,26 @@ export default function StudentDrawer({
     : '';
 
   async function openQr(inv: Invoice): Promise<void> {
-    const link = buildUpiLink(profile, student.name, inv);
-    const svg = await qrSvgForUpi(link);
-    setQr({ link, svg, amount: balance(inv), month: monthLabel(inv.month) });
-    setQrOpen(true);
+    setQrError(false);
+    try {
+      const link = buildUpiLink(profile, student.name, inv);
+      const svg = await qrSvgForUpi(link);
+      setQr({ link, svg, amount: balance(inv), month: monthLabel(inv.month) });
+      setQrOpen(true);
+    } catch {
+      setQrError(true);
+    }
   }
 
   return (
-    <div className="drawer-overlay" onClick={onClose}>
-      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+    <div className="drawer-overlay" ref={overlayRef} onClick={onClose}>
+      <div
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={student.name}
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2>{student.name}</h2>
         <p className="muted">
           {student.className} · {student.subject}
@@ -155,6 +179,8 @@ export default function StudentDrawer({
             Close
           </button>
         </div>
+
+        {qrError && <p className="muted">Could not generate the QR code. Try again.</p>}
 
         {qr && (
           <QrModal

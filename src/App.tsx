@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AppData, AppState, TemplateId } from './types';
 import { loadState, saveState, resetState } from './storage';
 import { balance } from './forecast';
@@ -83,6 +83,7 @@ export default function App() {
   const { route, preset } = useRoute();
   const [moreOpen, setMoreOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
+  const moreNavRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     // First visit only, and only when landing on the Dashboard: a deep link
@@ -94,6 +95,31 @@ export default function App() {
       setTourOpen(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    // The ref covers the bottom nav (the More button and its menu), so a click
+    // on the More button still toggles normally instead of closing then reopening.
+    const onMouseDown = (e: MouseEvent): void => {
+      if (moreNavRef.current && !moreNavRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        setMoreOpen(false);
+      }
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [moreOpen]);
 
   function closeTour(): void {
     window.localStorage.setItem('feeflow_tour_seen', '1');
@@ -241,7 +267,7 @@ export default function App() {
         </div>
       </main>
 
-      <nav className="bottom-nav" aria-label="Sections">
+      <nav className="bottom-nav" aria-label="Sections" ref={moreNavRef}>
         {MAIN_LINKS.map((l) => (
           <a key={l.route} href={`#/${l.route}`} className={linkClass('bottom-link', l.route)}>
             <NavIcon size={22}>{NAV_ICONS[l.route]}</NavIcon>

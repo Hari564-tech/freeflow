@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { AppData, Invoice, PaymentMethod } from '../types';
 import { balance } from '../forecast';
 import { formatINR } from '../format';
 import { validateInvoiceAmounts } from '../data';
+import { useFocusTrap } from '../useFocusTrap';
 
 type Props = {
   data: AppData;
@@ -21,6 +22,8 @@ export default function PaymentDrawer({ data, invoice, onChange, onClose }: Prop
   const [ref, setRef] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(overlayRef);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -31,6 +34,14 @@ export default function PaymentDrawer({ data, invoice, onChange, onClose }: Prop
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
 
   function handleSubmit(e: FormEvent<HTMLFormElement>): void {
     e.preventDefault();
@@ -75,7 +86,7 @@ export default function PaymentDrawer({ data, invoice, onChange, onClose }: Prop
   }
 
   return (
-    <div className="drawer-overlay" onClick={onClose}>
+    <div className="drawer-overlay" ref={overlayRef} onClick={onClose}>
       <div
         className="drawer"
         role="dialog"
@@ -87,7 +98,7 @@ export default function PaymentDrawer({ data, invoice, onChange, onClose }: Prop
         <p className="muted">
           Balance due {formatINR(owed)} · {invoice.month}
         </p>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <label className="form-field">
             <span>Amount</span>
             <input

@@ -136,7 +136,7 @@ export default function BillsTab({ data, onChange }: Props) {
             </tbody>
           </table>
         </div>
-        <form className="new-invoice-form" onSubmit={(e) => save(kind, e)}>
+        <form className="new-invoice-form" noValidate onSubmit={(e) => save(kind, e)}>
           <label>
             Name
             <input

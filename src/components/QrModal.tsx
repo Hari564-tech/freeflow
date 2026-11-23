@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { formatINR } from '../format';
+import { useFocusTrap } from '../useFocusTrap';
 
 type QrModalProps = {
   open: boolean;
@@ -33,12 +34,26 @@ export default function QrModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(overlayRef, open);
+
   if (!open) {
     return null;
   }
 
   return (
-    <div className="qr-overlay" onClick={onClose}>
+    <div className="qr-overlay" ref={overlayRef} onClick={onClose}>
       <div
         className="qr-modal"
         role="dialog"

@@ -95,6 +95,7 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
   const [showNew, setShowNew] = useState<boolean>(false);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [qr, setQr] = useState<{ invoice: Invoice; link: string; svg: string } | null>(null);
+  const [qrError, setQrError] = useState<boolean>(false);
 
   const studentOf = (inv: Invoice): Student | undefined =>
     data.students.find((s) => s.id === inv.studentId);
@@ -115,9 +116,14 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
   }
 
   async function openQr(inv: Invoice): Promise<void> {
-    const link = buildUpiLink(profile, nameOf(inv), inv);
-    const svg = await qrSvgForUpi(link);
-    setQr({ invoice: inv, link, svg });
+    setQrError(false);
+    try {
+      const link = buildUpiLink(profile, nameOf(inv), inv);
+      const svg = await qrSvgForUpi(link);
+      setQr({ invoice: inv, link, svg });
+    } catch {
+      setQrError(true);
+    }
   }
 
   function handleGenerate(): void {
@@ -137,7 +143,7 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
     a.href = url;
     a.download = 'feeflow-invoices.csv';
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function renderActions(inv: Invoice) {
@@ -234,40 +240,43 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
         {genMessage !== null && <p className="gen-message">{genMessage}</p>}
       </div>
 
-      <table className="invoices-table">
-        <thead>
-          <tr>
-            <th>Student</th>
-            <th>Month</th>
-            <th>Amount</th>
-            <th>Paid</th>
-            <th>Balance</th>
-            <th>Due date</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((inv) => {
-            const owed = balance(inv);
-            const status = displayStatus(inv, ref);
-            return (
-              <tr key={inv.id}>
-                <td>{nameOf(inv)}</td>
-                <td>{monthLabel(inv.month)}</td>
-                <td className="amount">{formatINR(inv.amount)}</td>
-                <td className="amount">{formatINR(amountPaid(inv))}</td>
-                <td className="amount">{formatINR(owed)}</td>
-                <td>{formatDate(inv.dueDate)}</td>
-                <td>
-                  <span className={`badge badge-${status}`}>{STATUS_LABEL[status]}</span>
-                </td>
-                <td>{renderActions(inv)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="table-wrap">
+        <table className="invoices-table">
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>Month</th>
+              <th>Amount</th>
+              <th>Paid</th>
+              <th>Balance</th>
+              <th>Due date</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((inv) => {
+              const owed = balance(inv);
+              const status = displayStatus(inv, ref);
+              return (
+                <tr key={inv.id}>
+                  <td>{nameOf(inv)}</td>
+                  <td>{monthLabel(inv.month)}</td>
+                  <td className="amount">{formatINR(inv.amount)}</td>
+                  <td className="amount">{formatINR(amountPaid(inv))}</td>
+                  <td className="amount">{formatINR(owed)}</td>
+                  <td>{formatDate(inv.dueDate)}</td>
+                  <td>
+                    <span className={`badge badge-${status}`}>{STATUS_LABEL[status]}</span>
+                  </td>
+                  <td>{renderActions(inv)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {qrError && <p className="muted">Could not generate the QR code. Try again.</p>}
 
       <div className="invoice-card-list">
         {rows.map((inv) => {

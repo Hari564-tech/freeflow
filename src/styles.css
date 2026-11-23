@@ -34,8 +34,17 @@
   --radius: 12px;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+html {
+  background: #FAF8F3;
+  overscroll-behavior: none;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 html,
@@ -49,8 +58,44 @@ body {
   color: var(--ink);
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-variant-numeric: normal;
-  font-size: 15px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overscroll-behavior: none;
+  font-size: 16px;
   line-height: 1.5;
+}
+
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+svg {
+  max-width: 100%;
+}
+
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #0F766E;
+  outline-offset: 2px;
 }
 
 h1,
@@ -84,15 +129,6 @@ h2 {
   border-bottom: 1px solid var(--border);
 }
 
-.app-title h1 {
-  font-size: 20px;
-  letter-spacing: 0.02em;
-}
-
-.subtitle {
-  margin: 2px 0 0;
-  color: var(--muted);
-}
 
 .header-meta {
   display: flex;
@@ -418,9 +454,6 @@ h2 {
     padding: 16px 12px 36px;
   }
 
-  .app-title h1 {
-    font-size: 1.5rem;
-  }
 
   .header-meta {
     width: 100%;
@@ -1235,18 +1268,6 @@ table th {
   color: #fff;
 }
 
-.forecast-ledger {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
-
-.forecast-ledger th,
-.forecast-ledger td {
-  text-align: left;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--line);
-}
 
 .in-amt {
   color: var(--teal);
@@ -1441,3 +1462,45 @@ button.m-row { cursor: pointer; }
     font-size: 0.78rem;
   }
 }
+
+/* M4 audit: previously unstyled classes (appended 2026-11-21) */
+.kpi-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 768px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1100px) { .kpi-grid { grid-template-columns: repeat(4, 1fr); } }
+.kpi-card { background: #FFFFFF; border: 1px solid #E7E2D8; border-radius: 12px; padding: 16px; }
+.intro-card, .pricing-card { background: #FFFFFF; border: 1px solid #E7E2D8; border-radius: 12px; padding: 16px; }
+.drawer-actions, .form-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.owes-table, .students-table { width: 100%; border-collapse: collapse; }
+.owes-table th, .owes-table td, .students-table th, .students-table td { padding: 10px 12px; border-bottom: 1px solid #E7E2D8; text-align: left; }
+.owes-table th, .students-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #78716C; }
+.owes-table .num, .students-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.section-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.toggle { border: 1px solid #E7E2D8; background: #FFFFFF; border-radius: 999px; padding: 6px 12px; min-height: 44px; cursor: pointer; }
+.form-ok { color: #15803D; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 10px 12px; }
+.archived { opacity: 0.6; }
+.bills-tab, .students-tab { display: flex; flex-direction: column; gap: 16px; }
+.template-switcher { display: flex; gap: 8px; flex-wrap: wrap; }
+.alert-buttons { flex-wrap: wrap; }
+.slider-row { flex-wrap: wrap; }
+.drawer { z-index: 1001; }
+.btn, .btn-sm, .tab, .switch-btn { min-height: 44px; }
+.tab { white-space: nowrap; }
+
+/* M4 final: small touch targets */
+.mobile-bell { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; }
+.m-select { min-height: 44px; }
+.m-link { display: inline-flex; align-items: center; min-height: 44px; }
+
+
+/* M4 E: 320px page overflow — root causes measured live (audit1 + probes).
+   Forecast: .inline-form label (inline-flex) is 283px in a 218px form because its
+   number input keeps the browser default width (~215px) and will not shrink.
+   Settings: Import JSON file input keeps its intrinsic 303px width in a 256px card.
+   Both pushed window.innerWidth to 350/354, so the fixed bottom-nav (left:0;right:0)
+   spanned the expanded layout viewport too. Nav untouched — it is a victim. */
+@media (max-width: 640px) {
+  .inline-form label { flex-wrap: wrap; }
+  .inline-form label input { flex: 1 1 120px; min-width: 0; }
+}
+.settings-tab input[type="file"] { max-width: 100%; }
+.bottom-link { min-width: 0; }

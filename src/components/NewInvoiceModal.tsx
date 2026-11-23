@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { AppData, Invoice } from '../types';
 import { addDays } from '../format';
 import { validateInvoiceAmounts } from '../data';
+import { useFocusTrap } from '../useFocusTrap';
 
 type Props = {
   data: AppData;
@@ -36,6 +37,18 @@ export default function NewInvoiceModal({
   const [dueDate, setDueDate] = useState<string>(addDays(data.referenceDate, dueDays));
   const [dueEdited, setDueEdited] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(overlayRef);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   function changeStudent(id: string): void {
     setStudentId(id);
@@ -97,7 +110,7 @@ export default function NewInvoiceModal({
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" ref={overlayRef} onClick={onClose}>
       <div
         className="modal"
         role="dialog"
@@ -106,7 +119,7 @@ export default function NewInvoiceModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h2>New invoice</h2>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <label className="form-field">
             <span>Student</span>
             <select value={studentId} onChange={(e) => changeStudent(e.target.value)}>

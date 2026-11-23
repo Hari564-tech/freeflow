@@ -105,7 +105,7 @@ export default function ForecastTab({
 
       <div className="card">
         <h2>Starting cash and safety buffer</h2>
-        <form className="inline-form" onSubmit={save}>
+        <form className="inline-form" noValidate onSubmit={save}>
           <label>
             Starting cash (INR)
             <input

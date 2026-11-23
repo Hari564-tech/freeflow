@@ -142,7 +142,7 @@ export default function StudentsTab({ data, onChange, peopleLabel }: Props) {
       {message && <p className="form-ok">{message}</p>}
 
       {formOpen && (
-        <form className="card" onSubmit={handleSubmit}>
+        <form className="card" noValidate onSubmit={handleSubmit}>
           <h3>{editingId === null ? addLabel : `Edit ${singular}`}</h3>
           {FIELDS.map((f) => (
             <label key={f.key} className="form-field">
@@ -175,54 +175,56 @@ export default function StudentsTab({ data, onChange, peopleLabel }: Props) {
         Show archived
       </label>
 
-      <table className="students-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Class and subject</th>
-            <th>Monthly fee</th>
-            <th>Parent or contact</th>
-            <th>Phone</th>
-            <th>Billing day</th>
-            <th>Reliability</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((s) => {
-            const rel = reliabilityOf(s.id, data.invoices, data.referenceDate);
-            return (
-              <tr key={s.id} className={s.active ? undefined : 'archived'}>
-                <td>{s.name}</td>
-                <td>
-                  {s.className} / {s.subject}
-                </td>
-                <td>{formatINR(s.monthlyFee)}</td>
-                <td>{s.parentName || '—'}</td>
-                <td>{s.parentPhone}</td>
-                <td>{s.billingDay}</td>
-                <td>
-                  <span className={`badge badge-${rel.tone}`}>{rel.label}</span>
-                </td>
-                <td>{s.active ? 'Active' : 'Archived'}</td>
-                <td>
-                  <button type="button" className="btn btn-ghost" onClick={() => openEdit(s)}>
-                    Edit
-                  </button>{' '}
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => setActive(s.id, !s.active)}
-                  >
-                    {s.active ? 'Archive' : 'Restore'}
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="table-wrap">
+        <table className="students-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Class and subject</th>
+              <th>Monthly fee</th>
+              <th>Parent or contact</th>
+              <th>Phone</th>
+              <th>Billing day</th>
+              <th>Reliability</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((s) => {
+              const rel = reliabilityOf(s.id, data.invoices, data.referenceDate);
+              return (
+                <tr key={s.id} className={s.active ? undefined : 'archived'}>
+                  <td>{s.name}</td>
+                  <td>
+                    {s.className} / {s.subject}
+                  </td>
+                  <td>{formatINR(s.monthlyFee)}</td>
+                  <td>{s.parentName || '—'}</td>
+                  <td>{s.parentPhone}</td>
+                  <td>{s.billingDay}</td>
+                  <td>
+                    <span className={`badge badge-${rel.tone}`}>{rel.label}</span>
+                  </td>
+                  <td>{s.active ? 'Active' : 'Archived'}</td>
+                  <td>
+                    <button type="button" className="btn btn-ghost" onClick={() => openEdit(s)}>
+                      Edit
+                    </button>{' '}
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setActive(s.id, !s.active)}
+                    >
+                      {s.active ? 'Archive' : 'Restore'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

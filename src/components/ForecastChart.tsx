@@ -190,6 +190,26 @@ export default function ForecastChart({
     setHover(Math.min(n - 1, Math.max(0, idx)));
   };
 
+  // Tap (touch or click): tapping a point toggles its tooltip; tapping the
+  // chart margins (outside the plot area) dismisses it.
+  const handleTap = (e: SvgMouseEvent<SVGSVGElement>): void => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      return;
+    }
+    const xv = ((e.clientX - rect.left) * W) / rect.width;
+    const yv = ((e.clientY - rect.top) * H) / rect.height;
+    const onPlot = xv >= PAD.left && xv <= W - PAD.right && yv >= PAD.top && yv <= H - PAD.bottom;
+    if (!onPlot) {
+      setHover(null);
+      return;
+    }
+    const step = n > 1 ? INNER_W / (n - 1) : 1;
+    const idx = n > 1 ? Math.round((xv - PAD.left) / step) : 0;
+    const target = Math.min(n - 1, Math.max(0, idx));
+    setHover((prev) => (prev === target ? null : target));
+  };
+
   const hp = hover !== null ? points[hover] : undefined;
   const hx = hover !== null ? xAt(hover, n) : 0;
   const hy = hp ? yAt(hp.balance) : 0;
@@ -207,6 +227,7 @@ export default function ForecastChart({
           aria-label={label}
           onMouseMove={handleMove}
           onMouseLeave={() => setHover(null)}
+          onClick={handleTap}
         >
           {ticks.map((v, k) => (
             <g key={k}>

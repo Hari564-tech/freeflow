@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { navigate, type Route } from '../router';
+import { useFocusTrap } from '../useFocusTrap';
 
 type Step = {
   route: Route;
@@ -42,6 +43,8 @@ const STEPS: Step[] = [
 
 export default function Tour({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<number>(0);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(overlayRef);
 
   useEffect(() => {
     navigate(STEPS[step].route);
@@ -57,11 +60,19 @@ export default function Tour({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   const current = STEPS[step];
   const last = step === STEPS.length - 1;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" ref={overlayRef} onClick={onClose}>
       <div
         className="modal"
         role="dialog"

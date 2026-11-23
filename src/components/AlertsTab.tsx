@@ -80,7 +80,7 @@ function CopyButton({ text }: { text: string }) {
   }
 
   return (
-    <button type="button" onClick={handleClick}>
+    <button type="button" className="btn btn-sm" onClick={handleClick}>
       {copied ? 'Copied' : 'Copy'}
     </button>
   );
@@ -305,7 +305,7 @@ export default function AlertsTab({ data, state, onStateChange }: Props) {
                     </>
                   )}
                   <div className="alert-buttons">
-                    {item.invoice !== undefined && item.student !== undefined && message !== '' && (
+                    {item.invoice !== undefined && item.student !== undefined && item.student.parentPhone && message !== '' && (
                       <a
                         className="btn"
                         href={waLink(item.student.parentPhone, message)}
@@ -317,19 +317,23 @@ export default function AlertsTab({ data, state, onStateChange }: Props) {
                     )}
                     {message !== '' && <CopyButton text={message} />}
                     {item.invoice !== undefined && (
-                      <button type="button" onClick={() => markReminderSent(item.invoice!.id)}>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => markReminderSent(item.invoice!.id)}
+                      >
                         Mark reminder sent
                       </button>
                     )}
                     {item.chase === true && (
-                      <button type="button" onClick={() => navigate('whatif/overdue')}>
+                      <button type="button" className="btn btn-sm" onClick={() => navigate('whatif/overdue')}>
                         See what-if
                       </button>
                     )}
-                    <button type="button" onClick={() => snooze(item.key)}>
+                    <button type="button" className="btn btn-sm" onClick={() => snooze(item.key)}>
                       Snooze 2 days
                     </button>
-                    <button type="button" onClick={() => dismiss(item.key)}>
+                    <button type="button" className="btn btn-sm" onClick={() => dismiss(item.key)}>
                       Dismiss
                     </button>
                   </div>

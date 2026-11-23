@@ -312,7 +312,7 @@ export default function DashboardTab({
   }
 
   const sortHeader = (key: SortKey, label: string) => (
-    <th>
+    <th aria-sort={sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <button type="button" className="btn btn-ghost" onClick={() => onSort(key)}>
         {label}
         {sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
@@ -491,7 +491,6 @@ export default function DashboardTab({
                     <tr
                       key={r.student.id}
                       className={i % 2 === 1 ? 'zebra' : undefined}
-                      onClick={() => setSelectedId(r.student.id)}
                     >
                       <td>
                         {r.student.name}

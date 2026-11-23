@@ -147,7 +147,7 @@ function ProfileCard({ state, onStateChange }: ProfileCardProps) {
   return (
     <div className="card">
       <h3>Business profile</h3>
-      <form onSubmit={save}>
+      <form noValidate onSubmit={save}>
         <label>
           Business name
           <input value={form.businessName} onChange={(e) => update('businessName', e.target.value)} />
@@ -198,7 +198,7 @@ function DueDaysCard({ state, onStateChange }: DueDaysCardProps) {
   return (
     <div className="card">
       <h3>Due days</h3>
-      <form onSubmit={save}>
+      <form noValidate onSubmit={save}>
         <label>
           Default days from issue to due date
           <input
@@ -237,7 +237,7 @@ function DataCard({ state, onStateChange, onImported, onReset }: DataCardProps) 
     anchor.href = url;
     anchor.download = 'feeflow-state.json';
     anchor.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function handleFile(e: ChangeEvent<HTMLInputElement>) {
