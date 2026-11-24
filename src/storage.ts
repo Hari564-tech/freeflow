@@ -59,6 +59,8 @@ function withDefaults(state: AppState): AppState {
     ...state,
     tone: loose.tone ?? 'Polite',
     dueDays: typeof loose.dueDays === 'number' ? loose.dueDays : 5,
+    promisedDates: loose.promisedDates ?? {},
+    paidBills: loose.paidBills ?? {},
   };
 }
 
@@ -72,6 +74,8 @@ function seedState(): AppState {
     dismissedAlerts: [],
     tone: 'Polite',
     dueDays: 5,
+    promisedDates: {},
+    paidBills: {},
   };
 }
 
@@ -131,6 +135,8 @@ function migrateV1ToState(v1: AppData): AppState {
     dismissedAlerts: [],
     tone: 'Polite',
     dueDays: 5,
+    promisedDates: {},
+    paidBills: {},
   };
 }
 

@@ -3,11 +3,14 @@ import type { AppData } from '../types';
 import {
   buildForecast,
   compareForecasts,
+  computeRecoveryPlan,
   type Forecast,
   type Scenario,
 } from '../forecast';
 import { formatDate, formatINR } from '../format';
 import ForecastChart, { type ChartPoint } from './ForecastChart';
+import { Money } from './ui';
+import { navigate } from '../router';
 
 const BASE: Scenario = {
   vikramLate: false,
@@ -22,6 +25,10 @@ const PRESETS: { label: string; scenario: Partial<Scenario> }[] = [
   { label: 'Vikram 15 days late (5 Dec to 20 Dec)', scenario: { vikramLate: true } },
   { label: 'All December fees 7 days late', scenario: { decLate: true } },
   { label: 'Overdue Nov fees still unpaid on rent day', scenario: { overdueUnpaid: true } },
+  {
+    label: 'Bad-day stress test: 5 families pay 15 days late',
+    scenario: { lateCount: 5, lateDelayDays: 15 },
+  },
 ];
 
 const VERDICT_CLASS: Record<'Safe' | 'Watch' | 'Shortfall', string> = {
@@ -51,22 +58,79 @@ function toChartPoints(f: Forecast): ChartPoint[] {
   return points;
 }
 
+// Which late-target the slider controls, derived from the scenario.
+function lateTargetOf(sc: Scenario): string {
+  if (sc.lateStudentId !== undefined) {
+    return sc.lateStudentId;
+  }
+  if (sc.lateCount === 5) {
+    return 'top5';
+  }
+  if (sc.lateTop3 === true || sc.lateCount === 3) {
+    return 'top3';
+  }
+  return 'none';
+}
+
 export default function WhatIfTab({
   data,
   initialScenario,
+  promisedDates,
+  paidBills,
 }: {
   data: AppData;
   initialScenario?: Partial<Scenario>;
+  promisedDates?: Record<string, string>;
+  paidBills?: Record<string, string>;
 }) {
   const [scenario, setScenario] = useState<Scenario>({ ...BASE, ...initialScenario });
 
-  const baseline = buildForecast(data, 30, BASE);
-  const result = buildForecast(data, 30, scenario);
+  const baseline = buildForecast(data, 30, { ...BASE, promisedDates, paidBills });
+  const result = buildForecast(data, 30, { ...scenario, promisedDates, paidBills });
   const cmp = compareForecasts(baseline, result);
 
   function update(patch: Partial<Scenario>): void {
     setScenario({ ...scenario, ...patch });
   }
+
+  // Key Customer Late Slider state (derived from the scenario).
+  const lateTarget = lateTargetOf(scenario);
+  const lateDays = scenario.lateDelayDays ?? 0;
+  function setLateTarget(value: string): void {
+    if (value === 'none') {
+      update({ lateStudentId: undefined, lateTop3: false, lateCount: undefined, lateDelayDays: 0 });
+    } else if (value === 'top3') {
+      update({ lateStudentId: undefined, lateTop3: true, lateCount: 3, lateDelayDays: lateDays });
+    } else if (value === 'top5') {
+      update({ lateStudentId: undefined, lateTop3: false, lateCount: 5, lateDelayDays: lateDays });
+    } else {
+      update({ lateStudentId: value, lateTop3: false, lateCount: undefined, lateDelayDays: lateDays });
+    }
+  }
+
+  // Expense Shock / Growth Toggle: one-time repair vs recurring assistant.
+  const expenseMode =
+    scenario.recurringExpense !== undefined && scenario.recurringExpense > 0
+      ? 'recurring'
+      : scenario.unexpectedExpense !== undefined && scenario.unexpectedExpense > 0
+        ? 'onetime'
+        : 'none';
+  function setExpenseMode(mode: 'none' | 'onetime' | 'recurring'): void {
+    if (mode === 'none') {
+      update({ unexpectedExpense: 0, recurringExpense: undefined });
+    } else if (mode === 'onetime') {
+      update({ unexpectedExpense: 8000, recurringExpense: undefined });
+    } else {
+      update({ unexpectedExpense: 0, recurringExpense: 4000 });
+    }
+  }
+
+  // Computed recovery plan: overdue invoices to collect today to get the
+  // simulated lowest back above the safety buffer.
+  const shortfall = Math.max(0, data.safetyBuffer - cmp.scenLowest);
+  const recovery = computeRecoveryPlan(data, shortfall);
+  const recoveryTotal = recovery.reduce((sum, r) => sum + r.amount, 0);
+  const scenarioActive = JSON.stringify(scenario) !== JSON.stringify(BASE);
 
   return (
     <section className="tab-content">
@@ -145,7 +209,98 @@ export default function WhatIfTab({
             />
           </label>
         </div>
+        <div className="slider-row">
+          <label>
+            Key customer pays late
+            <select value={lateTarget} onChange={(e) => setLateTarget(e.target.value)}>
+              <option value="none">Nobody in particular</option>
+              <option value="top3">Top 3 payers</option>
+              <option value="top5">Top 5 payers</option>
+              {data.students
+                .filter((st) => st.active)
+                .map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name} ({formatINR(st.monthlyFee)}/mo)
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            Late by {lateDays} days
+            <input
+              type="range"
+              min={0}
+              max={30}
+              step={1}
+              value={lateDays}
+              disabled={lateTarget === 'none'}
+              onChange={(e) => update({ lateDelayDays: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+        <div className="slider-row">
+          <label>
+            Expense shock / growth
+            <select
+              value={expenseMode}
+              onChange={(e) => setExpenseMode(e.target.value as 'none' | 'onetime' | 'recurring')}
+            >
+              <option value="none">No extra expense</option>
+              <option value="onetime">One-time repair ₹8,000</option>
+              <option value="recurring">Recurring assistant ₹4,000 / month</option>
+            </select>
+          </label>
+        </div>
       </div>
+
+      {scenarioActive && (
+        <div className="card compare-banner">
+          <h2>Baseline vs simulated</h2>
+          <p>
+            Lowest cash: <Money value={cmp.baseLowest} /> on {formatDate(baseline.minBalanceDate)}{' '}
+            → <Money value={cmp.scenLowest} /> on {formatDate(result.minBalanceDate)} (
+            {cmp.lowestDelta >= 0 ? '+' : ''}
+            <Money value={cmp.lowestDelta} />)
+          </p>
+          <p className="muted">
+            Cash crunch date:{' '}
+            {cmp.breachDate === null ? 'none — stays above the buffer' : formatDate(cmp.breachDate)}
+          </p>
+        </div>
+      )}
+
+      {shortfall > 0 && (
+        <div className="card recovery-plan">
+          <h2>Recovery plan</h2>
+          <p>
+            The simulation dips <Money value={shortfall} /> below the{' '}
+            {formatINR(data.safetyBuffer)} buffer. Collecting these overdue invoices today
+            covers it:
+          </p>
+          {recovery.length === 0 ? (
+            <p className="muted">
+              Nothing overdue to chase — the shortfall can&apos;t be covered from overdue fees.
+            </p>
+          ) : (
+            <>
+              <ul>
+                {recovery.map((r) => (
+                  <li key={r.invoiceId}>
+                    {r.studentName} — <Money value={r.amount} /> ({r.daysOverdue} days overdue)
+                  </li>
+                ))}
+              </ul>
+              <p className="muted">
+                {recovery.length} {recovery.length === 1 ? 'invoice' : 'invoices'} ·{' '}
+                <Money value={recoveryTotal} /> unlocked
+              </p>
+              <button type="button" className="btn btn-primary" onClick={() => navigate('chase')}>
+                Chase These Now
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="whatif-delta-grid">
         <div className="card delta-card">

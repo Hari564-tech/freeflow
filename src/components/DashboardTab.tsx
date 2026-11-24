@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, Clock, MessageCircle, QrCode, TrendingUp, UserPlus } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Check, MessageCircle, QrCode, UserPlus } from 'lucide-react';
 import type { AppData, BusinessProfile, Invoice, Student, TemplateId } from '../types';
-import { balance, buildForecast, isOverdue, type Forecast } from '../forecast';
-import { addDays, diffDays, formatDate, formatINR } from '../format';
+import { amountPaid, balance, buildForecast, cashOnHand, isOverdue, type Forecast } from '../forecast';
+import { diffDays, formatDate, formatDateTime, formatINR } from '../format';
 import { navigate } from '../router';
 import { buildReminderMessage, waLink } from '../reminders';
 import { buildUpiLink, monthLabel, qrSvgForUpi } from '../qr';
@@ -12,7 +12,8 @@ import PaymentDrawer from './PaymentDrawer';
 import QrModal from './QrModal';
 import ReceiptModal, { type ReceiptInfo } from './ReceiptModal';
 import StudentDrawer from './StudentDrawer';
-import { Avatar, ProgressBar, StatusPill } from './ui';
+import { Avatar, Money, ProgressBar, SegmentedControl, Skeleton, SkeletonRow, StatusPill } from './ui';
+import { computeAlerts } from '../alerts';
 
 type SortKey = 'name' | 'owed' | 'due' | 'status' | 'share';
 type SortDir = 'asc' | 'desc';
@@ -234,6 +235,9 @@ export default function DashboardTab({
   dueDays,
   templateId,
   templateLabel,
+  promisedDates,
+  paidBills,
+  reminders,
 }: {
   data: AppData;
   profile: BusinessProfile;
@@ -242,12 +246,25 @@ export default function DashboardTab({
   dueDays: number;
   templateId: TemplateId;
   templateLabel: string;
+  promisedDates?: Record<string, string>;
+  paidBills?: Record<string, string>;
+  reminders?: Record<string, string>;
 }) {
   const ref = data.referenceDate;
   const [sortKey, setSortKey] = useState<SortKey>('status');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [introVisible, setIntroVisible] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [bucket, setBucket] = useState<'all' | '1-7' | '8-15' | '15+' | 'due-soon'>('all');
+  const [cashEditing, setCashEditing] = useState<boolean>(false);
+  const [cashDraft, setCashDraft] = useState<string>('');
+
+  // Brief loading skeleton on first mount (data is local, so this is short).
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoading(false), 350);
+    return () => window.clearTimeout(t);
+  }, []);
   const [horizon, setHorizon] = useState<Horizon>(30);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [paying, setPaying] = useState<Invoice | null>(null);
@@ -261,18 +278,9 @@ export default function DashboardTab({
   const unpaid = activeInvoices.filter((inv) => balance(inv) > 0);
   const overdue = unpaid.filter((inv) => isOverdue(inv, ref));
 
-  const day7 = addDays(ref, 7);
-  const day30 = addDays(ref, 30);
-  const dueWithin = (end: string): Invoice[] =>
-    unpaid.filter((inv) => !isOverdue(inv, ref) && inv.dueDate >= ref && inv.dueDate <= end);
-  const due7 = dueWithin(day7);
-  const due30 = dueWithin(day30);
-
   const totalOutstanding = sumBalance(unpaid);
-  const totalOverdue = sumBalance(overdue);
-  const totalDue30 = sumBalance(due30);
 
-  const forecast = buildForecast(data, 30, { vikramLate: false, decLate: false });
+  const forecast = buildForecast(data, 30, { vikramLate: false, decLate: false, promisedDates, paidBills });
 
   const worst: Invoice | undefined = [...overdue].sort(byDueThenBalance)[0];
   const worstName = worst
@@ -317,8 +325,8 @@ export default function DashboardTab({
   const subline = (inv: Invoice): string =>
     templateId === 'tutor' ? 'Monthly tuition fee' : inv.subject;
 
+  const cashShown = useCountUp(cashOnHand(data, paidBills));
   const outShown = useCountUp(totalOutstanding);
-  const overShown = useCountUp(totalOverdue);
 
   const monthPrefix = ref.slice(0, 7);
   let collectedThisMonth = 0;
@@ -330,7 +338,7 @@ export default function DashboardTab({
     }
   }
 
-  const mobileForecast = buildForecast(data, horizon, { vikramLate: false, decLate: false });
+  const mobileForecast = buildForecast(data, horizon, { vikramLate: false, decLate: false, promisedDates, paidBills });
   const chartPoints = collectionPoints(mobileForecast);
 
   const activity: ActivityItem[] = [];
@@ -412,35 +420,128 @@ export default function DashboardTab({
 
   // Needs attention: most overdue first, then the largest balance.
   const needsAttention = [...rows].sort((a, b) => b.days - a.days || b.owed - a.owed).slice(0, 5);
-  const collectedPct =
-    collectedThisMonth + totalOutstanding > 0
-      ? Math.round((collectedThisMonth / (collectedThisMonth + totalOutstanding)) * 100)
-      : 0;
+
+  // Financial Pulse Strip figures (live from data, nothing hard-coded).
+  const paidBillsTotal = (paidBills === undefined ? 0 : data.bills.reduce(
+    (sum, b) => sum + (paidBills[b.id] !== undefined ? b.amount : 0), 0));
+  const billedThisMonth = data.invoices
+    .filter((inv) => inv.month === monthPrefix)
+    .reduce((sum, inv) => sum + inv.amount, 0);
+  const collectedVsBilledPct =
+    billedThisMonth > 0 ? Math.round((collectedThisMonth / billedThisMonth) * 100) : 0;
+  const oldestOverdue = rows.reduce((m, r) => Math.max(m, r.days), 0);
+  const lowBelowBuffer = forecast.minBalance < data.safetyBuffer;
+  const pulseAlerts = computeAlerts(data, { promisedDates, paidBills }).slice(0, 4);
+
+  const ledgerRows = sortedRows.filter((r) => {
+    if (bucket === 'all') return true;
+    if (bucket === 'due-soon') return r.days <= 0;
+    if (bucket === '1-7') return r.days >= 1 && r.days <= 7;
+    if (bucket === '8-15') return r.days >= 8 && r.days <= 15;
+    return r.days >= 16;
+  });
+
+  function saveCash(e: FormEvent<HTMLFormElement>): void {
+    e.preventDefault();
+    const value = Number(cashDraft);
+    if (!Number.isFinite(value) || value < 0) {
+      return;
+    }
+    onChange({ ...data, openingCash: value });
+    setCashEditing(false);
+  }
+
+  if (loading) {
+    return (
+      <section className="tab-content" aria-label="Loading overview">
+        <div className="pulse-strip">
+          <Skeleton height={110} width="100%" />
+          <Skeleton height={110} width="100%" />
+        </div>
+        <SkeletonRow />
+        <SkeletonRow />
+        <SkeletonRow />
+      </section>
+    );
+  }
 
   return (
     <section className="tab-content">
-      <div className="hero-card">
-        <div className="hero-label">Total pending this month</div>
-        <div className="hero-value">{formatINR(totalOutstanding)}</div>
-        <p className="hero-sub">
-          Collected {formatINR(collectedThisMonth)} so far · {formatINR(totalOverdue)} overdue
-        </p>
-        <ProgressBar value={collectedPct} ariaLabel={`Collected ${collectedPct} percent of this month's fees`} />
-        <div className="hero-actions">
-          {overdue.length > 0 ? (
-            <a className="hero-btn" href="#/alerts">
-              <MessageCircle size={18} aria-hidden="true" /> Send reminders to all overdue
-            </a>
+      <div className="pulse-strip">
+        <div className="card pulse-card">
+          <div className="stat-label">Cash on hand</div>
+          <div className="stat-value"><Money value={cashShown} /></div>
+          <div className="muted">
+            Starting balance {formatINR(data.openingCash)}
+            {paidBillsTotal > 0 ? ` − ${formatINR(paidBillsTotal)} bills paid` : ''}
+          </div>
+          {cashEditing ? (
+            <form className="inline-form" onSubmit={saveCash} noValidate>
+              <input
+                type="number"
+                min={0}
+                step={100}
+                value={cashDraft}
+                onChange={(e) => setCashDraft(e.target.value)}
+                aria-label="Starting balance"
+              />
+              <button type="submit" className="btn btn-sm btn-primary">Save</button>
+            </form>
           ) : (
-            <span className="hero-btn">
-              <Check size={18} aria-hidden="true" /> Nothing overdue — nice work
-            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => { setCashDraft(String(data.openingCash)); setCashEditing(true); }}
+            >
+              Edit starting balance
+            </button>
           )}
-          <a className="hero-btn hero-btn-ghost" href="#/forecast">
-            <TrendingUp size={18} aria-hidden="true" /> View 30-day forecast
-          </a>
+        </div>
+        <div className="card pulse-card">
+          <div className="stat-label">Total owed to you</div>
+          <div className="stat-value"><Money value={outShown} /></div>
+          <div className="muted">
+            {rows.length} {rows.length === 1 ? 'family' : 'families'} unpaid
+            {oldestOverdue > 0 ? ` · oldest ${oldestOverdue} days overdue` : ' · nothing overdue'}
+          </div>
+        </div>
+        <div className={`card pulse-card${lowBelowBuffer ? ' pulse-danger' : ''}`}>
+          <div className="stat-label">30-day projected low point</div>
+          <div className="stat-value"><Money value={forecast.minBalance} /></div>
+          <div className="muted">
+            on {formatDate(forecast.minBalanceDate)}
+            {lowBelowBuffer ? ` — below the ${formatINR(data.safetyBuffer)} buffer` : ''}
+          </div>
+        </div>
+        <div className="card pulse-card">
+          <div className="stat-label">Collected this month</div>
+          <div className="stat-value"><Money value={collectedThisMonth} /></div>
+          <div className="muted">of {formatINR(billedThisMonth)} billed</div>
+          <ProgressBar value={collectedVsBilledPct} ariaLabel={`Collected ${collectedVsBilledPct} percent of this month's billed fees`} />
         </div>
       </div>
+
+      {pulseAlerts.length > 0 && (
+        <div className="card alerts-stack">
+          <div className="m-card-head">
+            <h2>Next Best Actions</h2>
+            <a className="m-link" href="#/alerts">View all</a>
+          </div>
+          <ul className="alerts-stack-list">
+            {pulseAlerts.map((a) => (
+              <li key={a.key} className={`alert-stack-item alert-${a.severity}`}>
+                <div>
+                  <strong>{a.title}</strong>
+                  <p className="muted">{a.body}</p>
+                </div>
+                <button type="button" className="btn btn-sm btn-primary" onClick={() => navigate(a.actionHref)}>
+                  {a.actionLabel}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="dash-desktop">
         {introVisible && (
@@ -460,36 +561,6 @@ export default function DashboardTab({
           </div>
         )}
 
-        <div className="kpi-grid">
-          <div className="card kpi-card">
-            <div className="stat-label">Total outstanding</div>
-            <div className="stat-value">{formatINR(totalOutstanding)}</div>
-          </div>
-          <div className="card kpi-card stat-danger">
-            <div className="stat-label">Total overdue</div>
-            <div className="stat-value">{formatINR(totalOverdue)}</div>
-          </div>
-          <div className="card kpi-card stat-info">
-            <div className="stat-label">Due in next 30 days</div>
-            <div className="stat-value">{formatINR(totalDue30)}</div>
-          </div>
-          <div className="card kpi-card stat-info">
-            <div className="stat-label">Expected in next 30 days</div>
-            <div className="stat-value">{formatINR(forecast.totalIn)}</div>
-            <div className="muted">
-              <a href="#/forecast">View 30-day forecast</a>
-            </div>
-          </div>
-          <div className="card kpi-card">
-            <div className="stat-label">Cash position</div>
-            <div className="stat-value">{formatINR(data.openingCash)}</div>
-            <div className="muted">Safety buffer {formatINR(data.safetyBuffer)}</div>
-            <div className="muted">
-              Lowest forecast balance {formatINR(forecast.minBalance)} on{' '}
-              {formatDate(forecast.minBalanceDate)}
-            </div>
-          </div>
-        </div>
 
         <div className="card">
           <p>
@@ -502,73 +573,96 @@ export default function DashboardTab({
         </div>
 
         <div className="card">
-          <h2>Ageing</h2>
-          <table className="table">
-            <tbody>
-              <tr>
-                <td>Overdue</td>
-                <td className="num">{formatINR(totalOverdue)}</td>
-              </tr>
-              <tr>
-                <td>Due in 7 days</td>
-                <td className="num">{formatINR(sumBalance(due7))}</td>
-              </tr>
-              <tr>
-                <td>Due in 30 days</td>
-                <td className="num">{formatINR(totalDue30)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div className="card">
-          <h2>Who owes me</h2>
-          {rows.length === 0 ? (
-            <p className="muted">Nothing outstanding. All invoices are paid.</p>
+          <div className="m-card-head">
+            <h2>Who Owes Me</h2>
+            <span className="muted">{ledgerRows.length} {ledgerRows.length === 1 ? 'family' : 'families'}</span>
+          </div>
+          <SegmentedControl
+            options={[
+              { value: 'all', label: 'All Unpaid' },
+              { value: '1-7', label: '1–7 Days Late' },
+              { value: '8-15', label: '8–15 Days Late' },
+              { value: '15+', label: '15+ Days Late' },
+              { value: 'due-soon', label: 'Due Soon' },
+            ]}
+            value={bucket}
+            onChange={(v) => setBucket(v as 'all' | '1-7' | '8-15' | '15+' | 'due-soon')}
+            label="Aging bucket"
+          />
+          {ledgerRows.length === 0 ? (
+            <p className="muted">Nobody in this bucket — try another filter, or enjoy the quiet.</p>
           ) : (
             <div className="table-wrap">
-              <table className="owes-table table">
+              <table className="owes-table table ledger-table">
                 <thead>
                   <tr>
-                    {sortHeader('name', 'Student and Class')}
+                    {sortHeader('name', 'Student & Parent')}
+                    <th>Batch / Subject</th>
                     {sortHeader('owed', 'Amount owed')}
-                    {sortHeader('due', 'Due date')}
-                    {sortHeader('status', 'Status and aging')}
-                    {sortHeader('share', 'Share of receivables')}
-                    <th>Quick actions</th>
+                    <th>Overdue since</th>
+                    <th>Last chased</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedRows.map((r, i) => (
-                    <tr
-                      key={r.student.id}
-                      className={i % 2 === 1 ? 'zebra' : undefined}
-                    >
-                      <td>
-                        {r.student.name}
-                        <div className="muted">{r.student.className}</div>
-                      </td>
-                      <td className="num">{formatINR(r.owed)}</td>
-                      <td>{formatDate(r.dueDate)}</td>
-                      <td>
-                        <span className={r.days > 0 ? 'badge badge-overdue' : 'badge badge-draft'}>
-                          {statusText(r.days)}
-                        </span>
-                      </td>
-                      <td className="num">
-                        {totalOutstanding > 0 ? Math.round((r.owed / totalOutstanding) * 100) : 0}%
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          onClick={() => setSelectedId(r.student.id)}
-                        >
-                          View
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {ledgerRows.map((r, i) => {
+                    const inv = invoiceFor(r.student.id);
+                    const href = inv ? remindHref(inv, r.student) : null;
+                    const mine = unpaid.filter((x) => x.studentId === r.student.id);
+                    const paidSoFar = mine.reduce((sum, x) => sum + amountPaid(x), 0);
+                    const total = mine.reduce((sum, x) => sum + x.amount, 0);
+                    const lastChased =
+                      inv !== undefined && reminders !== undefined ? reminders[inv.id] : undefined;
+                    return (
+                      <tr key={r.student.id} className={i % 2 === 1 ? 'zebra' : undefined}>
+                        <td>
+                          {r.student.name}
+                          <div className="muted">{r.student.parentName}</div>
+                        </td>
+                        <td>
+                          {r.student.className}
+                          <div className="muted">{r.student.subject}</div>
+                        </td>
+                        <td className="num">
+                          <Money value={r.owed} />
+                          {total > 0 && paidSoFar > 0 && (
+                            <div className="ledger-progress">
+                              <ProgressBar
+                                value={Math.round((paidSoFar / total) * 100)}
+                                ariaLabel={`${formatINR(paidSoFar)} of ${formatINR(total)} paid`}
+                              />
+                              <span className="muted">{formatINR(paidSoFar)} paid</span>
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          {formatDate(r.dueDate)}
+                          <div className="muted">
+                            {r.days > 0 ? `${r.days} days ago` : r.days === 0 ? 'Due today' : `Due in ${-r.days} days`}
+                          </div>
+                        </td>
+                        <td>{lastChased !== undefined ? formatDateTime(lastChased) : '—'}</td>
+                        <td>
+                          <div className="need-actions">
+                            {href !== null ? (
+                              <a className="btn btn-sm" href={href} target="_blank" rel="noopener noreferrer">
+                                <MessageCircle aria-hidden="true" /> Chase
+                              </a>
+                            ) : (
+                              <span className="btn btn-sm" aria-disabled="true" style={{ opacity: 0.5 }}>
+                                No phone
+                              </span>
+                            )}
+                            {inv && (
+                              <button type="button" className="btn btn-sm btn-primary" onClick={() => setPaying(inv)}>
+                                Mark paid
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -578,9 +672,14 @@ export default function DashboardTab({
         <div className="card">
           <div className="m-card-head">
             <h2>Needs attention</h2>
-            <a className="m-link" href="#/invoices">
-              View all
-            </a>
+            <span>
+              <a className="m-link" href="#/chase">
+                Open chase queue
+              </a>{' '}
+              <a className="m-link" href="#/invoices">
+                View all
+              </a>
+            </span>
           </div>
           {needsAttention.length === 0 ? (
             <div className="empty-state">
@@ -652,6 +751,13 @@ export default function DashboardTab({
             <li>Unlimited WhatsApp-style reminders and UPI QR codes</li>
             <li>Local-first: your data stays in your browser</li>
           </ul>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => window.dispatchEvent(new Event('feeflow-open-pricing'))}
+          >
+            Why switch from a notebook?
+          </button>
         </div>
       </div>
 
@@ -682,29 +788,6 @@ export default function DashboardTab({
           <div className="muted">{"Here's your fee overview."}</div>
         </div>
 
-        <div className="kpi-chips">
-          <div className="kpi-chip kpi-chip-success">
-            <div className="kpi-chip-label">
-              <Check aria-hidden="true" /> Collected
-            </div>
-            <div className="kpi-chip-value">{formatINR(collectedThisMonth)}</div>
-            <div className="kpi-chip-sub">this month</div>
-          </div>
-          <div className="kpi-chip">
-            <div className="kpi-chip-label">
-              <Clock aria-hidden="true" /> Pending
-            </div>
-            <div className="kpi-chip-value">{formatINR(outShown)}</div>
-            <div className="kpi-chip-sub">{unpaid.length} unpaid {unpaid.length === 1 ? 'invoice' : 'invoices'}</div>
-          </div>
-          <div className="kpi-chip kpi-chip-danger">
-            <div className="kpi-chip-label">
-              <AlertTriangle aria-hidden="true" /> Overdue
-            </div>
-            <div className="kpi-chip-value">{formatINR(overShown)}</div>
-            <div className="kpi-chip-sub">{overdue.length} overdue</div>
-          </div>
-        </div>
 
         <div className="card m-collect">
           <div className="m-card-head">
@@ -804,9 +887,14 @@ export default function DashboardTab({
         <div className="card">
           <div className="m-card-head">
             <h2>Needs attention</h2>
-            <a className="m-link" href="#/invoices">
-              View all
-            </a>
+            <span>
+              <a className="m-link" href="#/chase">
+                Open chase queue
+              </a>{' '}
+              <a className="m-link" href="#/invoices">
+                View all
+              </a>
+            </span>
           </div>
           {needsAttention.length === 0 ? (
             <div className="empty-state">

@@ -1,9 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { AppData } from '../types';
 import { buildForecast, type Forecast, type Scenario } from '../forecast';
 import { formatDate, formatINR } from '../format';
 import ForecastChart, { type ChartPoint } from './ForecastChart';
-import { SegmentedControl } from './ui';
+import { Skeleton, SkeletonRow, SegmentedControl } from './ui';
 
 type Horizon = 30 | 60 | 90;
 type Filter = 'all' | 'in' | 'out';
@@ -56,17 +56,28 @@ function toChartPoints(f: Forecast): ChartPoint[] {
 export default function ForecastTab({
   data,
   onChange,
+  promisedDates,
+  paidBills,
 }: {
   data: AppData;
   onChange: (next: AppData) => void;
+  promisedDates?: Record<string, string>;
+  paidBills?: Record<string, string>;
 }) {
+  const [loading, setLoading] = useState<boolean>(true);
   const [horizon, setHorizon] = useState<Horizon>(30);
   const [filter, setFilter] = useState<Filter>('all');
   const [cashInput, setCashInput] = useState(String(data.openingCash));
   const [bufferInput, setBufferInput] = useState(String(data.safetyBuffer));
   const [error, setError] = useState<string | null>(null);
 
-  const forecast = buildForecast(data, horizon, BASE);
+  // Brief loading skeleton on first mount (data is local, so this is short).
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoading(false), 350);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const forecast = buildForecast(data, horizon, { ...BASE, promisedDates, paidBills });
   const chartPoints = toChartPoints(forecast);
 
   function save(e: FormEvent<HTMLFormElement>): void {
@@ -85,6 +96,18 @@ export default function ForecastTab({
   const rows = forecast.events
     .map((event, index) => ({ event, index }))
     .filter((row) => filter === 'all' || row.event.kind === filter);
+
+  if (loading) {
+    return (
+      <section className="tab-content" aria-label="Loading forecast">
+        <Skeleton height={44} width="100%" />
+        <Skeleton height={120} width="100%" />
+        <SkeletonRow />
+        <SkeletonRow />
+        <SkeletonRow />
+      </section>
+    );
+  }
 
   return (
     <section className="tab-content">
@@ -163,7 +186,11 @@ export default function ForecastTab({
       </div>
 
       <div className="card">
-        <h2>Ledger</h2>
+        <h2>Cash Events Timeline</h2>
+        <p className="muted">
+          Every inflow and bill in the window, in date order, with the running balance after
+          each one.
+        </p>
         <SegmentedControl
           options={FILTERS.map((f) => ({ value: f.key, label: f.label }))}
           value={filter}
@@ -203,7 +230,13 @@ export default function ForecastTab({
       <div className="card calc-note">
         <h2>How this forecast is calculated</h2>
         <ul>
-          <li>Starts from the opening cash balance on the reference date.</li>
+          <li>
+            Starts from the cash on hand on the reference date (opening cash less bills already
+            marked paid).
+          </li>
+          <li>
+            A promised payment date from Bad Day Mode moves that invoice&apos;s expected pay date.
+          </li>
           <li>Unpaid invoices are assumed to pay on their due date.</li>
           <li>
             Overdue invoices are assumed to pay 3 days after the last reminder, or 3 days from the

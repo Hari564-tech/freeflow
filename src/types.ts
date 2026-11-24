@@ -85,4 +85,8 @@ export type AppState = {
   dismissedAlerts: string[]; // alert keys
   tone: ReminderTone;
   dueDays: number; // days after issue date that invoices fall due (default 5)
+  // M6: invoiceId -> date the parent promised to pay (Bad Day Mode).
+  promisedDates: Record<string, string>;
+  // M6: billId -> date the bill was marked paid (Bills tab toggle).
+  paidBills: Record<string, string>;
 };

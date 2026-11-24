@@ -1,5 +1,5 @@
 import type { AppData, Invoice, Payment, Student } from './types';
-import { addDays } from './format';
+import { addDays, diffDays } from './format';
 
 export type Scenario = {
   vikramLate: boolean;
@@ -8,6 +8,17 @@ export type Scenario = {
   loseTopStudent?: boolean; // removes generated invoices of the highest-fee student
   unexpectedExpense?: number; // one extra outflow dated referenceDate
   overdueUnpaid?: boolean; // overdue unpaid invoices are forecast for 2026-12-10
+  // M6 what-if: one key customer (or the top 3 payers) pays N days late (Dec only).
+  lateStudentId?: string;
+  lateTop3?: boolean;
+  lateCount?: number; // top N payers by monthly fee pay late (Bad-day preset: 5)
+  lateDelayDays?: number; // 0 to 30
+  // M6 what-if: recurring monthly cost, e.g. a part-time assistant (out on the 1st).
+  recurringExpense?: number;
+  // M6 Bad Day Mode: invoiceId -> date the parent promised to pay (overrides the
+  // overdue chase date). billId -> date a bill was marked paid (occurrence settled).
+  promisedDates?: Record<string, string>;
+  paidBills?: Record<string, string>;
 };
 
 export type ForecastInvoice = {
@@ -37,6 +48,7 @@ export type Forecast = {
   minBalanceDate: string;
   aboveBuffer: boolean;
   openingCash: number;
+  startBalance: number; // openingCash less bills already marked paid
   safetyBuffer: number;
   referenceDate: string;
   horizonEnd: string;
@@ -69,6 +81,22 @@ export function getInvoiceDueDate(
   const student = students.find((s) => s.id === inv.studentId);
   if (scenario.vikramLate && student?.name === 'Vikram Patel') {
     return '2026-12-20';
+  }
+  const lateDelay = scenario.lateDelayDays ?? 0;
+  if (lateDelay > 0) {
+    if (scenario.lateStudentId !== undefined && inv.studentId === scenario.lateStudentId) {
+      return addDays(inv.dueDate, lateDelay);
+    }
+    const count = scenario.lateCount ?? (scenario.lateTop3 === true ? 3 : 0);
+    if (count > 0) {
+      const top = [...students]
+        .sort((a, b) => b.monthlyFee - a.monthlyFee)
+        .slice(0, count)
+        .map((x) => x.id);
+      if (top.includes(inv.studentId)) {
+        return addDays(inv.dueDate, lateDelay);
+      }
+    }
   }
   if (scenario.decLate) {
     return addDays(inv.dueDate, 7);
@@ -172,6 +200,10 @@ function scenarioPayDate(
     return base;
   }
   if (effectiveDueDate < referenceDate) {
+    const promised = scenario.promisedDates?.[inv.id];
+    if (promised !== undefined) {
+      return promised < referenceDate ? referenceDate : promised;
+    }
     return scenario.overdueUnpaid ? '2026-12-10' : base;
   }
   const delay = Math.min(20, Math.max(0, scenario.delayDays ?? 0));
@@ -252,17 +284,30 @@ export function buildForecast(
 
   const months = monthsBetween(ref, horizonEnd);
   for (const bill of data.bills) {
+    // A bill marked paid is settled: its money has already left (the forecast
+    // starts at cashOnHand, which deducts it). A one-time bill is done; a
+    // recurring bill is settled only for the month it was paid in.
+    const paidDate = scenario.paidBills?.[bill.id];
     if (bill.oneTimeDate !== undefined) {
-      if (inWindow(bill.oneTimeDate)) {
+      if (inWindow(bill.oneTimeDate) && paidDate === undefined) {
         events.push({ date: bill.oneTimeDate, label: bill.name, kind: 'out', amount: bill.amount });
       }
     } else if (bill.dayOfMonth !== undefined) {
       const day = String(bill.dayOfMonth).padStart(2, '0');
       for (const ym of months) {
         const date = `${ym}-${day}`;
-        if (inWindow(date)) {
+        if (inWindow(date) && paidDate?.slice(0, 7) !== ym) {
           events.push({ date, label: bill.name, kind: 'out', amount: bill.amount });
         }
+      }
+    }
+  }
+
+  if (scenario.recurringExpense !== undefined && scenario.recurringExpense > 0) {
+    for (const ym of months) {
+      const date = `${ym}-01`;
+      if (inWindow(date)) {
+        events.push({ date, label: 'Part-time assistant', kind: 'out', amount: scenario.recurringExpense });
       }
     }
   }
@@ -287,8 +332,9 @@ export function buildForecast(
     return a.kind === 'in' ? -1 : 1;
   });
 
-  let running = data.openingCash;
-  let minBalance = data.openingCash;
+  const startBalance = cashOnHand(data, scenario.paidBills);
+  let running = startBalance;
+  let minBalance = startBalance;
   let minBalanceDate = ref;
   let totalIn = 0;
   let totalOut = 0;
@@ -323,10 +369,26 @@ export function buildForecast(
     minBalanceDate,
     aboveBuffer: minBalance >= data.safetyBuffer,
     openingCash: data.openingCash,
+    startBalance,
     safetyBuffer: data.safetyBuffer,
     referenceDate: ref,
     horizonEnd,
   };
+}
+
+// Cash actually on hand: opening cash minus bills already marked paid.
+// Seed data has no paid bills, so this equals openingCash (PATCH-safe).
+export function cashOnHand(data: AppData, paidBills: Record<string, string> | undefined): number {
+  if (paidBills === undefined) {
+    return data.openingCash;
+  }
+  let paid = 0;
+  for (const bill of data.bills) {
+    if (paidBills[bill.id] !== undefined) {
+      paid += bill.amount;
+    }
+  }
+  return data.openingCash - paid;
 }
 
 export function compareForecasts(
@@ -370,5 +432,71 @@ export function compareForecasts(
     daysBelowBuffer,
     verdict,
   };
+}
+
+export type CashEvent = {
+  date: string;
+  label: string;
+  kind: 'in' | 'out';
+  amount: number;
+  balanceAfter: number;
+};
+
+// Chronological forecast events with the running balance after each one
+// (drives the Cash Events Timeline under the forecast chart).
+export function cashEvents(forecast: Forecast): CashEvent[] {
+  let running = forecast.startBalance;
+  const out: CashEvent[] = [];
+  for (const e of forecast.events) {
+    running += e.kind === 'in' ? e.amount : -e.amount;
+    out.push({ date: e.date, label: e.label, kind: e.kind, amount: e.amount, balanceAfter: running });
+  }
+  return out;
+}
+
+export type RecoveryPlanItem = {
+  studentId: string;
+  studentName: string;
+  invoiceId: string;
+  amount: number;
+  daysOverdue: number;
+};
+
+// Smallest set of overdue invoices to collect today to cover a shortfall,
+// ranked by amount owed x days overdue (largest first). Empty when there is
+// no shortfall or nothing overdue to chase.
+export function computeRecoveryPlan(data: AppData, shortfall: number): RecoveryPlanItem[] {
+  if (shortfall <= 0) {
+    return [];
+  }
+  const ref = data.referenceDate;
+  const items: RecoveryPlanItem[] = [];
+  for (const inv of data.invoices) {
+    if (!isOverdue(inv, ref)) {
+      continue;
+    }
+    const student = data.students.find((s) => s.id === inv.studentId);
+    if (student === undefined) {
+      continue;
+    }
+    items.push({
+      studentId: inv.studentId,
+      studentName: student.name,
+      invoiceId: inv.id,
+      amount: balance(inv),
+      daysOverdue: diffDays(inv.dueDate, ref),
+    });
+  }
+  items.sort((a, b) => b.amount * b.daysOverdue - a.amount * a.daysOverdue);
+  const plan: RecoveryPlanItem[] = [];
+  let covered = 0;
+  for (const item of items) {
+    plan.push(item);
+    covered += item.amount;
+    if (covered >= shortfall) {
+      break;
+    }
+  }
+  return plan;
 }
 

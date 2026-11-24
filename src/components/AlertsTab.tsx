@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AppData, AppState, Invoice, ReminderTone, Student } from '../types';
-import { Chip, SegmentedControl, WhatsAppBubble } from './ui';
+import { Chip, SegmentedControl, Skeleton, SkeletonRow, WhatsAppBubble } from './ui';
+import { computeAlerts, type AlertSeverity } from '../alerts';
 import {
   balance,
   buildForecast,
@@ -17,6 +18,14 @@ type Props = {
   data: AppData;
   state: AppState;
   onStateChange: (next: AppState) => void;
+  highlightInvoiceId?: string | null;
+};
+
+const SEVERITY_ORDER: AlertSeverity[] = ['critical', 'warning', 'info'];
+const SEVERITY_LABEL: Record<AlertSeverity, string> = {
+  critical: 'Needs action now',
+  warning: 'Worth a look',
+  info: 'Good to know',
 };
 
 type Category = 'Overdue' | 'Due Soon' | 'Cash Buffer Risk' | 'Upcoming Large Expenses';
@@ -112,8 +121,36 @@ function nextRecurringDate(dayOfMonth: number, referenceDate: string): string {
   return `${next[0]}-${String(next[1]).padStart(2, '0')}-${day}`;
 }
 
-export default function AlertsTab({ data, state, onStateChange }: Props) {
+export default function AlertsTab({ data, state, onStateChange, highlightInvoiceId }: Props) {
   const ref = data.referenceDate;
+  const [loading, setLoading] = useState<boolean>(true);
+  const [highlighted, setHighlighted] = useState<string | null>(highlightInvoiceId ?? null);
+
+  // Brief loading skeleton on first mount (data is local, so this is short).
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoading(false), 350);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  // An alert action links here with an invoice id: scroll to that reminder.
+  useEffect(() => {
+    if (highlightInvoiceId === null || highlightInvoiceId === undefined) {
+      return;
+    }
+    setHighlighted(highlightInvoiceId);
+    window.setTimeout(() => {
+      document
+        .getElementById(`alert-card-${highlightInvoiceId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  }, [highlightInvoiceId]);
+
+  // Smart alerts: the four computed rules, live from the data.
+  const smartAlerts = computeAlerts(data, {
+    promisedDates: state.promisedDates,
+    paidBills: state.paidBills,
+  });
+
   const unpaid = data.invoices.filter((inv) => balance(inv) > 0);
   const overdue = unpaid.filter((inv) => isOverdue(inv, ref));
   const dueSoon = unpaid.filter((inv) => {
@@ -247,9 +284,59 @@ export default function AlertsTab({ data, state, onStateChange }: Props) {
 
   const visible = alerts.filter((a) => !isHidden(a.key));
 
+  if (loading) {
+    return (
+      <div className="alerts-tab" aria-label="Loading alerts">
+        <Skeleton height={28} width="40%" />
+        <Skeleton height={110} width="100%" />
+        <SkeletonRow />
+        <SkeletonRow />
+      </div>
+    );
+  }
+
   return (
     <div className="alerts-tab">
       <h2>Alerts</h2>
+
+      <div className="card smart-alerts">
+        <h3>Smart alerts</h3>
+        {smartAlerts.length === 0 ? (
+          <p className="muted">
+            No smart alerts — nothing is over 30 days late, the forecast stays above water, and
+            every bill due soon is covered.
+          </p>
+        ) : (
+          SEVERITY_ORDER.map((sev) => {
+            const group = smartAlerts.filter((a) => a.severity === sev);
+            if (group.length === 0) {
+              return null;
+            }
+            return (
+              <div key={sev} className="smart-alert-group">
+                <h4>{SEVERITY_LABEL[sev]}</h4>
+                <ul className="smart-alert-list">
+                  {group.map((a) => (
+                    <li key={a.key} className={`smart-alert-item alert-${sev}`}>
+                      <div>
+                        <strong>{a.title}</strong>
+                        <p className="muted">{a.body}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={() => navigate(a.actionHref)}
+                      >
+                        {a.actionLabel}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })
+        )}
+      </div>
 
       <div className="card">
         <p className="muted" style={{ margin: '0 0 8px' }}>Reminder tone</p>
@@ -290,8 +377,14 @@ export default function AlertsTab({ data, state, onStateChange }: Props) {
                   : '';
               const lastReminded =
                 item.invoice !== undefined ? state.reminders[item.invoice.id] : undefined;
+              const isHighlighted =
+                item.invoice !== undefined && highlighted === item.invoice.id;
               return (
-                <section key={item.key} className={`alert-card alert-${item.tone}`}>
+                <section
+                  key={item.key}
+                  id={item.invoice !== undefined ? `alert-card-${item.invoice.id}` : undefined}
+                  className={`alert-card alert-${item.tone}${isHighlighted ? ' alert-highlight' : ''}`}
+                >
                   <Chip tone={item.tone === 'danger' ? 'danger' : item.tone === 'warn' ? 'warning' : item.tone === 'ok' ? 'success' : 'info'}>
                     {item.category}
                   </Chip>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { FileText } from 'lucide-react';
 import type { AppData, BusinessProfile, Invoice, Student } from '../types';
 import { amountPaid, balance, isOverdue } from '../forecast';
@@ -12,7 +12,7 @@ import PaymentDrawer from './PaymentDrawer';
 import NewInvoiceModal from './NewInvoiceModal';
 import QrModal from './QrModal';
 import ReceiptModal, { type ReceiptInfo } from './ReceiptModal';
-import { EmptyState, StatusPill, type PillStatus } from './ui';
+import { EmptyState, Money, StatusPill, type PillStatus } from './ui';
 
 type Props = {
   data: AppData;
@@ -96,6 +96,46 @@ function updateInvoice(
   };
 }
 
+// Parse a quick entry like "Riya 3500 due 5th" into its parts. Returns an
+// error string when it cannot be understood.
+function parseQuickEntry(
+  text: string,
+  students: Student[],
+): { student: Student; amount: number | null; dueDay: number | null } | string {
+  const raw = text.trim();
+  if (raw === '') {
+    return 'Type something like "Riya 3500 due 5th".';
+  }
+  let rest = raw;
+  let dueDay: number | null = null;
+  const dueMatch = rest.match(/\bdue(?:\s+on)?\s+(\d{1,2})(?:st|nd|rd|th)?\b/i);
+  if (dueMatch !== null) {
+    dueDay = Number(dueMatch[1]);
+    if (dueDay < 1 || dueDay > 28) {
+      return 'Due day must be 1–28.';
+    }
+    rest = rest.replace(dueMatch[0], ' ');
+  }
+  let amount: number | null = null;
+  const amtMatch = rest.match(/\b(\d+(?:\.\d+)?)\b/);
+  if (amtMatch !== null) {
+    amount = Number(amtMatch[1]);
+    rest = rest.replace(amtMatch[0], ' ');
+  }
+  const name = rest.replace(/\s+/g, ' ').trim();
+  if (name === '') {
+    return 'Which student? Start with their name, e.g. "Riya 3500 due 5th".';
+  }
+  const needle = name.toLowerCase();
+  const student =
+    students.find((st) => st.active && st.name.toLowerCase().startsWith(needle)) ??
+    students.find((st) => st.active && st.name.toLowerCase().includes(needle));
+  if (student === undefined) {
+    return `No student matches "${name}".`;
+  }
+  return { student, amount, dueDay };
+}
+
 export default function InvoicesTab({ data, onChange, profile, dueDays }: Props) {
   const ref = data.referenceDate;
   const [status, setStatus] = useState<StatusFilter>('unpaid');
@@ -104,6 +144,8 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
   const [genMonth, setGenMonth] = useState<string>('2026-12');
   const [genMessage, setGenMessage] = useState<string | null>(null);
   const [showNew, setShowNew] = useState<boolean>(false);
+  const [quickEntry, setQuickEntry] = useState<string>('');
+  const [quickMessage, setQuickMessage] = useState<{ tone: 'error' | 'ok'; text: string } | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [qr, setQr] = useState<{ invoice: Invoice; link: string; svg: string } | null>(null);
   const [qrError, setQrError] = useState<boolean>(false);
@@ -145,6 +187,56 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
     } catch {
       setQrError(true);
     }
+  }
+
+  function submitQuickEntry(e: FormEvent<HTMLFormElement>): void {
+    e.preventDefault();
+    const parsed = parseQuickEntry(quickEntry, data.students);
+    if (typeof parsed === 'string') {
+      setQuickMessage({ tone: 'error', text: parsed });
+      return;
+    }
+    const { student, amount, dueDay } = parsed;
+    const fee = amount ?? student.monthlyFee;
+    // Due date: the given day this month if it is still ahead, else next month.
+    const [y, m] = ref.split('-').map(Number);
+    const day = dueDay ?? 5;
+    let dueYear = y;
+    let dueMonth = m;
+    if (day <= Number(ref.slice(8, 10))) {
+      dueMonth += 1;
+      if (dueMonth > 12) {
+        dueMonth = 1;
+        dueYear += 1;
+      }
+    }
+    const dueDate = `${dueYear}-${String(dueMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const month = dueDate.slice(0, 7);
+    if (data.invoices.some((i) => i.studentId === student.id && i.month === month)) {
+      setQuickMessage({
+        tone: 'error',
+        text: `${student.name} already has an invoice for ${monthLabel(month)}.`,
+      });
+      return;
+    }
+    const inv: Invoice = {
+      id: `inv-${Date.now().toString(36)}`,
+      studentId: student.id,
+      subject: student.subject,
+      month,
+      amount: fee,
+      issueDate: ref,
+      dueDate,
+      status: 'draft',
+      payments: [],
+      reminders: [],
+    };
+    onChange({ ...data, invoices: [...data.invoices, inv] });
+    setQuickEntry('');
+    setQuickMessage({
+      tone: 'ok',
+      text: `Created a ${formatINR(fee)} draft invoice for ${student.name}, due ${formatDate(dueDate)}.`,
+    });
   }
 
   function handleGenerate(): void {
@@ -217,6 +309,30 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
         </div>
       </div>
 
+      <form className="card quick-entry" onSubmit={submitQuickEntry} noValidate>
+        <label>
+          Quick entry
+          <input
+            type="text"
+            placeholder='Try "Riya 3500 due 5th"'
+            value={quickEntry}
+            onChange={(e) => {
+              setQuickEntry(e.target.value);
+              setQuickMessage(null);
+            }}
+            aria-label="Quick entry: student name, amount, due day"
+          />
+        </label>
+        <button type="submit" className="btn btn-primary">
+          Add invoice
+        </button>
+        {quickMessage !== null && (
+          <p className={quickMessage.tone === 'error' ? 'form-error' : 'form-ok'}>
+            {quickMessage.text}
+          </p>
+        )}
+      </form>
+
       <div className="filter-bar">
         <label>
           Status
@@ -252,11 +368,11 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
 
       <div className="filter-bar">
         <label>
-          Generate for
+          Bill entire month for
           <input type="month" value={genMonth} onChange={(e) => setGenMonth(e.target.value)} />
         </label>
         <button type="button" onClick={handleGenerate}>
-          Generate invoices
+          Bill Entire Month
         </button>
         {genMessage !== null && <p className="gen-message">{genMessage}</p>}
       </div>
@@ -283,9 +399,9 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
                 <tr key={inv.id}>
                   <td>{nameOf(inv)}</td>
                   <td>{monthLabel(inv.month)}</td>
-                  <td className="amount">{formatINR(inv.amount)}</td>
-                  <td className="amount">{formatINR(amountPaid(inv))}</td>
-                  <td className="amount">{formatINR(owed)}</td>
+                  <td className="amount"><Money value={inv.amount} /></td>
+                  <td className="amount"><Money value={amountPaid(inv)} /></td>
+                  <td className="amount"><Money value={owed} /></td>
                   <td>{formatDate(inv.dueDate)}</td>
                   <td>
                     <StatusPill status={PILL_STATUS[status]} label={STATUS_LABEL[status]} />
@@ -313,8 +429,8 @@ export default function InvoicesTab({ data, onChange, profile, dueDays }: Props)
                 {monthLabel(inv.month)} · Due {formatDate(inv.dueDate)}
               </p>
               <p className="amount">
-                Amount {formatINR(inv.amount)} · Paid {formatINR(amountPaid(inv))} · Balance{' '}
-                {formatINR(owed)}
+                Amount <Money value={inv.amount} /> · Paid <Money value={amountPaid(inv)} /> · Balance{' '}
+                <Money value={owed} />
               </p>
               {renderActions(inv)}
             </div>

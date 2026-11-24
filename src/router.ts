@@ -8,7 +8,8 @@ export type Route =
   | 'alerts'
   | 'settings'
   | 'bills'
-  | 'whatif';
+  | 'whatif'
+  | 'chase';
 
 const ROUTES: Route[] = [
   'dashboard',
@@ -19,6 +20,7 @@ const ROUTES: Route[] = [
   'settings',
   'bills',
   'whatif',
+  'chase',
 ];
 
 export type ParsedHash = { route: Route; preset: string | null };

@@ -14,12 +14,12 @@ const H = 260;
 const PAD = { left: 64, right: 16, top: 16, bottom: 28 };
 const INNER_W = W - PAD.left - PAD.right;
 const INNER_H = H - PAD.top - PAD.bottom;
-const TEAL = '#4F46E5';
-const RED = '#DC2626';
-const AMBER = '#D97706';
-const BLUE = '#8B5CF6';
-const GRID = '#CBD5E1';
-const MUTED = '#64748B';
+const TEAL = '#0E6251';
+const RED = '#B42318';
+const AMBER = '#B45309';
+const BLUE = '#626872';
+const GRID = '#E6E4DD';
+const MUTED = '#626872';
 
 // Short rupee label for axis ticks, e.g. 1,50,000 -> ₹1.5L, 4,000 -> ₹4k.
 function compactINR(n: number): string {
@@ -244,6 +244,38 @@ export default function ForecastChart({
               </text>
             </g>
           ))}
+          {lo < 0 && (
+            <rect
+              x={PAD.left}
+              y={yAt(0)}
+              width={W - PAD.left - PAD.right}
+              height={PAD.top + INNER_H - yAt(0)}
+              fill={RED}
+              opacity={0.06}
+            />
+          )}
+          {lo < 0 && (
+            <g>
+              <line
+                x1={PAD.left}
+                x2={W - PAD.right}
+                y1={yAt(0)}
+                y2={yAt(0)}
+                stroke={RED}
+                strokeWidth={1.5}
+                strokeDasharray="6 4"
+              />
+              <text
+                x={W - PAD.right}
+                y={yAt(0) - 5}
+                textAnchor="end"
+                fontSize={11}
+                fill={RED}
+              >
+                ₹0 crunch line
+              </text>
+            </g>
+          )}
           <line
             x1={PAD.left}
             x2={W - PAD.right}
@@ -333,6 +365,12 @@ export default function ForecastChart({
           <span className="chart-legend-swatch" style={{ background: AMBER }} />
           Safety buffer
         </span>
+        {lo < 0 && (
+          <span>
+            <span className="chart-legend-swatch" style={{ background: RED }} />
+            Below ₹0
+          </span>
+        )}
         {compare && compareLabel && (
           <span>
             <span className="chart-legend-swatch" style={{ background: BLUE }} />

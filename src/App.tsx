@@ -5,29 +5,28 @@ import {
   Calculator,
   ChevronLeft,
   ChevronRight,
+  Download,
   FileText,
   Home,
   Landmark,
-  Monitor,
-  Moon,
   Plus,
   Receipt,
   RotateCcw,
   Search,
   Settings as SettingsIcon,
   Sparkles,
-  Sun,
   TrendingUp,
   UserPlus,
   Users,
   Wallet,
   X,
+  Zap,
 } from 'lucide-react';
 import type { AppData, AppState, TemplateId } from './types';
 import { loadState, saveState, resetState } from './storage';
 import { balance } from './forecast';
 import { formatDate, formatINR } from './format';
-import { parseHash, useRoute, type Route } from './router';
+import { navigate, parseHash, useRoute, type Route } from './router';
 import DashboardTab from './components/DashboardTab';
 import InvoicesTab from './components/InvoicesTab';
 import ForecastTab from './components/ForecastTab';
@@ -37,11 +36,13 @@ import BillsTab from './components/BillsTab';
 import WhatIfTab from './components/WhatIfTab';
 import SettingsTab from './components/SettingsTab';
 import Tour from './components/Tour';
+import ChaseTab from './components/ChaseTab';
+import PricingModal from './components/PricingModal';
+import NewInvoiceModal from './components/NewInvoiceModal';
+import { computeAlerts } from './alerts';
 import { Confetti, Toasts } from './components/ui';
 
 const REFERENCE_DATE = '2026-11-21';
-
-type Theme = 'light' | 'dark' | 'system';
 
 const TEMPLATE_LABELS: Record<TemplateId, string> = {
   tutor: 'Home Tutor',
@@ -49,15 +50,19 @@ const TEMPLATE_LABELS: Record<TemplateId, string> = {
   salon: 'Neighbourhood Salon',
 };
 
+// M6-expanded sidebar: 5 sections, What-if nested under Cash Forecast,
+// Alerts + Bad Day Mode as triage, Settings in the footer area.
 const NAV_ITEMS: { route: Route; label: string; Icon: typeof Home }[] = [
-  { route: 'dashboard', label: 'Dashboard', Icon: Home },
+  { route: 'dashboard', label: 'Overview', Icon: Home },
+  { route: 'invoices', label: 'Receivables & Invoices', Icon: Receipt },
+  { route: 'forecast', label: 'Cash Forecast', Icon: TrendingUp },
+  { route: 'bills', label: 'Bills & Expenses', Icon: Landmark },
   { route: 'students', label: 'Students', Icon: Users },
-  { route: 'invoices', label: 'Invoices', Icon: Receipt },
-  { route: 'forecast', label: 'Forecast', Icon: TrendingUp },
-  { route: 'whatif', label: 'What-if', Icon: Calculator },
-  { route: 'bills', label: 'Bills', Icon: Landmark },
+];
+
+const TRIAGE_ITEMS: { route: Route; label: string; Icon: typeof Home }[] = [
   { route: 'alerts', label: 'Alerts', Icon: Bell },
-  { route: 'settings', label: 'Settings', Icon: SettingsIcon },
+  { route: 'chase', label: 'Bad Day Mode', Icon: Zap },
 ];
 
 const MONEY_ITEMS: { route: Route; label: string; Icon: typeof Home }[] = [
@@ -74,26 +79,16 @@ function initials(name: string): string {
   return (words[0].slice(0, 1) + words[1].slice(0, 1)).toUpperCase();
 }
 
-function readTheme(): Theme {
-  const saved = window.localStorage.getItem('feeflow_theme');
-  if (saved === 'light' || saved === 'dark' || saved === 'system') {
-    return saved;
-  }
-  return 'system';
-}
-
-function resolveTheme(theme: Theme): 'light' | 'dark' {
-  if (theme !== 'system') {
-    return theme;
-  }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState());
   const { route, preset } = useRoute();
   const [tourOpen, setTourOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>(() => readTheme());
+  const [quickInvoiceOpen, setQuickInvoiceOpen] = useState(false);
+  const [pricingOpen, setPricingOpen] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<Event | null>(null);
+  const [installDismissed, setInstallDismissed] = useState<boolean>(
+    () => window.localStorage.getItem('feeflow_pwa_dismissed') === '1',
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
     () => window.localStorage.getItem('feeflow_sidebar_collapsed') === '1',
   );
@@ -108,32 +103,49 @@ export default function App() {
   const profileRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
 
-  // ---- Theme: apply data-theme + theme-color, follow the OS when 'system' ----
+  // ---- M6-expanded: single warm-paper theme; the dark theme was removed.
+  // The toggle is gone on purpose — one calm paper theme, no neon.
   useEffect(() => {
-    const apply = (): void => {
-      const resolved = resolveTheme(theme);
-      document.documentElement.dataset.theme = resolved;
-      const meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) {
-        meta.setAttribute('content', resolved === 'dark' ? '#0B1020' : '#F8FAFC');
-      }
-    };
-    apply();
-    window.localStorage.setItem('feeflow_theme', theme);
-    if (theme !== 'system') {
-      return undefined;
+    document.documentElement.dataset.theme = 'light';
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute('content', '#F8FAFC');
     }
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = (): void => apply();
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [theme]);
+  }, []);
 
-  function cycleTheme(): void {
-    setTheme((t) => (t === 'light' ? 'dark' : t === 'dark' ? 'system' : 'light'));
+  // ---- PWA install prompt (beforeinstallprompt) ----
+  useEffect(() => {
+    const onBeforeInstall = (e: Event): void => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+  }, []);
+
+  // ---- Pricing modal opens from the sidebar footer / dashboard card ----
+  useEffect(() => {
+    const onPricing = (): void => setPricingOpen(true);
+    window.addEventListener('feeflow-open-pricing', onPricing);
+    return () => window.removeEventListener('feeflow-open-pricing', onPricing);
+  }, []);
+
+  async function installApp(): Promise<void> {
+    const p = installPrompt as
+      | (Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> })
+      | null;
+    if (p === null) {
+      return;
+    }
+    await p.prompt();
+    await p.userChoice;
+    setInstallPrompt(null);
   }
-  const effectiveTheme = resolveTheme(theme);
-  const ThemeIcon = theme === 'system' ? Monitor : effectiveTheme === 'dark' ? Moon : Sun;
+
+  function dismissInstall(): void {
+    window.localStorage.setItem('feeflow_pwa_dismissed', '1');
+    setInstallDismissed(true);
+  }
 
   // ---- Logo uploaded in Settings ----
   useEffect(() => {
@@ -232,10 +244,18 @@ export default function App() {
     0,
   );
   const totalOverdue = overdueInvoices.reduce((sum, inv) => sum + balance(inv), 0);
+  // Live bell badge: overdue invoices plus the new alert rules (rule (a)
+  // overlaps the overdue count, so it is excluded here to avoid double count).
+  const alertItems = computeAlerts(data, {
+    promisedDates: state.promisedDates,
+    paidBills: state.paidBills,
+  });
+  const alertCount =
+    overdueCount + alertItems.filter((a) => a.rule !== 'overdue-30').length;
   const badge =
-    overdueCount > 0 ? (
-      <span className="nav-badge" key={overdueCount}>
-        {overdueCount}
+    alertCount > 0 ? (
+      <span className="nav-badge" key={alertCount}>
+        {alertCount}
       </span>
     ) : null;
 
@@ -301,8 +321,7 @@ export default function App() {
   }
 
   function openNewInvoice(): void {
-    window.localStorage.setItem('feeflow_open_new_invoice', '1');
-    window.location.hash = '#/invoices';
+    setQuickInvoiceOpen(true);
     setSheet(null);
   }
 
@@ -322,20 +341,49 @@ export default function App() {
             dueDays={state.dueDays}
             templateId={state.activeTemplateId}
             templateLabel={TEMPLATE_LABELS[state.activeTemplateId]}
+            promisedDates={state.promisedDates}
+            paidBills={state.paidBills}
+            reminders={state.reminders}
           />
         );
       case 'invoices':
         return <InvoicesTab data={data} onChange={update} profile={profile} dueDays={state.dueDays} />;
       case 'forecast':
-        return <ForecastTab data={data} onChange={update} />;
+        return (
+          <ForecastTab
+            data={data}
+            onChange={update}
+            promisedDates={state.promisedDates}
+            paidBills={state.paidBills}
+          />
+        );
       case 'alerts':
-        return <AlertsTab data={data} state={state} onStateChange={setAppState} />;
+        return (
+          <AlertsTab
+            data={data}
+            state={state}
+            onStateChange={setAppState}
+            highlightInvoiceId={preset}
+          />
+        );
       case 'students':
         return <StudentsTab data={data} onChange={update} peopleLabel={peopleLabel} />;
       case 'bills':
-        return <BillsTab data={data} onChange={update} />;
+        return <BillsTab data={data} onChange={update} state={state} onStateChange={setAppState} />;
       case 'whatif':
-        return <WhatIfTab key={preset ?? 'base'} data={data} initialScenario={preset === 'overdue' ? { overdueUnpaid: true } : undefined} />;
+        return (
+          <WhatIfTab
+            key={preset ?? 'base'}
+            data={data}
+            initialScenario={preset === 'overdue' ? { overdueUnpaid: true } : undefined}
+            promisedDates={state.promisedDates}
+            paidBills={state.paidBills}
+          />
+        );
+      case 'chase':
+        return (
+          <ChaseTab data={data} state={state} onStateChange={setAppState} onChange={update} />
+        );
       case 'settings':
         return (
           <SettingsTab
@@ -344,8 +392,6 @@ export default function App() {
             state={state}
             onStateChange={setAppState}
             onReset={handleReset}
-            theme={theme}
-            onThemeChange={setTheme}
           />
         );
     }
@@ -373,11 +419,35 @@ export default function App() {
             <a key={r} href={`#/${r}`} className={linkClass('sidebar-link', r)}>
               <Icon aria-hidden="true" />
               <span className="sidebar-label">{label}</span>
+            </a>
+          ))}
+          <a href="#/whatif" className={linkClass('sidebar-link sidebar-sub', 'whatif')}>
+            <Calculator aria-hidden="true" />
+            <span className="sidebar-label">What-if simulator</span>
+          </a>
+          <div className="sidebar-group-label">Triage</div>
+          {TRIAGE_ITEMS.map(({ route: r, label, Icon }) => (
+            <a key={r} href={`#/${r}`} className={linkClass('sidebar-link', r)}>
+              <Icon aria-hidden="true" />
+              <span className="sidebar-label">{label}</span>
               {r === 'alerts' && badge}
             </a>
           ))}
         </nav>
         <div className="sidebar-foot">
+          <a href="#/settings" className={linkClass('sidebar-link', 'settings')}>
+            <SettingsIcon aria-hidden="true" />
+            <span className="sidebar-label">Settings</span>
+          </a>
+          <button
+            type="button"
+            className="sidebar-link sidebar-pricing"
+            onClick={() => setPricingOpen(true)}
+          >
+            <Sparkles aria-hidden="true" />
+            <span className="sidebar-label">Why switch from a notebook?</span>
+          </button>
+          <span className="sidebar-foot-note">Built for CodeBenders ACE Builders&apos; Hackathon 2026</span>
           <span className="badge demo sidebar-foot-text">Demo data</span>
           <span className="template-label sidebar-foot-text">
             {TEMPLATE_LABELS[state.activeTemplateId]}
@@ -406,13 +476,14 @@ export default function App() {
             <span className="topbar-ref">Reference date: {formatDate(REFERENCE_DATE)}</span>
             <button
               type="button"
-              className="icon-btn"
-              onClick={cycleTheme}
-              aria-label={`Switch theme (currently ${theme})`}
-              title={`Theme: ${theme} — click to change`}
+              className="btn btn-primary"
+              onClick={() => setQuickInvoiceOpen(true)}
             >
-              <ThemeIcon aria-hidden="true" />
+              + Quick Invoice
             </button>
+            <a href="#/chase" className="btn btn-secondary">
+              <Zap aria-hidden="true" /> Bad Day Mode
+            </a>
             <a href="#/alerts" className="icon-btn" aria-label={`Alerts${overdueCount > 0 ? `, ${overdueCount} overdue` : ''}`}>
               <Bell aria-hidden="true" />
               {badge}
@@ -462,15 +533,6 @@ export default function App() {
               FeeFlow
             </div>
             <div className="mobile-head-right">
-              <button
-                type="button"
-                className="icon-btn mobile-bell"
-                onClick={cycleTheme}
-                aria-label={`Switch theme (currently ${theme})`}
-                style={{ border: 'none', background: 'none' }}
-              >
-                <ThemeIcon aria-hidden="true" />
-              </button>
               <a href="#/alerts" className="mobile-bell" aria-label={`Alerts${overdueCount > 0 ? `, ${overdueCount} overdue` : ''}`}>
                 <Bell aria-hidden="true" />
                 {overdueCount > 0 && <span className="bell-dot" key={overdueCount} />}
@@ -493,11 +555,24 @@ export default function App() {
           </div>
         </header>
 
+        {installPrompt !== null && !installDismissed && (
+          <div className="pwa-banner" role="status">
+            <Download aria-hidden="true" />
+            <span>Install FeeFlow as an app on this device.</span>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void installApp()}>
+              Install
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={dismissInstall}>
+              Not now
+            </button>
+          </div>
+        )}
         <main className="app-main">
           <div key={route} className="page-enter">
             {renderPage()}
           </div>
         </main>
+        <footer className="app-footer">Built for CodeBenders ACE Builders&apos; Hackathon 2026</footer>
       </div>
 
       {/* Mobile bottom tab bar: Home, Students, + , Money, Alerts */}
@@ -584,6 +659,16 @@ export default function App() {
       <Confetti burstKey={burstKey} />
       <Toasts />
       {tourOpen && <Tour onClose={closeTour} />}
+      {quickInvoiceOpen && (
+        <NewInvoiceModal
+          data={data}
+          onChange={update}
+          onClose={() => setQuickInvoiceOpen(false)}
+          onAddStudent={() => navigate('students')}
+          dueDays={state.dueDays}
+        />
+      )}
+      {pricingOpen && <PricingModal data={data} state={state} onClose={() => setPricingOpen(false)} />}
     </div>
   );
 }

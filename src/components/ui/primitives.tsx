@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { formatDate, formatINR } from '../../format';
 import {
   AlertTriangle,
   Check,
@@ -230,4 +231,14 @@ export function Tooltip({ tip, children }: { tip: string; children: ReactNode })
       {children}
     </span>
   );
+}
+
+/* ---------- Money: the one INR formatter (en-IN, no paise) ---------- */
+export function Money({ value, className = '' }: { value: number; className?: string }) {
+  return <span className={`money ${className}`.trim()}>{formatINR(value)}</span>;
+}
+
+/* ---------- DateText: never renders an ISO string in the UI ---------- */
+export function DateText({ value, className = '' }: { value: string; className?: string }) {
+  return <span className={`date-text ${className}`.trim()}>{formatDate(value)}</span>;
 }
